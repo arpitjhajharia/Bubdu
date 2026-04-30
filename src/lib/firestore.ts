@@ -151,8 +151,72 @@ export function getDoseStatus(
   return diffMins <= 30 ? 'upcoming' : 'later'
 }
 
-// Returns true if any dose is overdue today
+// ── Schedule helpers ──────────────────────────────────────────────────────────
+
+function toYMD(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function getEndDate(medicine: Medicine): string | null {
+  if (!medicine.repetitions) return null  // ongoing
+  const start = new Date(medicine.startDate)
+  if (medicine.repeatSchedule === 'daily') {
+    start.setDate(start.getDate() + medicine.repetitions - 1)
+  } else {
+    start.setDate(start.getDate() + (medicine.repetitions - 1) * 7)
+  }
+  return toYMD(start)
+}
+
+export function isCourseComplete(medicine: Medicine): boolean {
+  const end = getEndDate(medicine)
+  if (!end) return false
+  return toYMD(new Date()) > end
+}
+
+export function isCourseStarted(medicine: Medicine): boolean {
+  return toYMD(new Date()) >= medicine.startDate
+}
+
+// For weekly: is today the scheduled day of week?
+export function isWeeklyDueToday(medicine: Medicine): boolean {
+  return new Date(medicine.startDate).getDay() === new Date().getDay()
+}
+
+// Returns { current, total, unit } — e.g. { current: 3, total: 7, unit: 'day' }
+export function getCourseProgress(medicine: Medicine): { current: number; total: number; unit: string } {
+  const start = new Date(medicine.startDate)
+  const today = new Date()
+  start.setHours(0, 0, 0, 0); today.setHours(0, 0, 0, 0)
+  const diffDays = Math.max(0, Math.floor((today.getTime() - start.getTime()) / 86400000))
+  if (medicine.repeatSchedule === 'daily') {
+    return { current: Math.min(diffDays + 1, medicine.repetitions || 9999), total: medicine.repetitions, unit: 'day' }
+  }
+  return { current: Math.min(Math.floor(diffDays / 7) + 1, medicine.repetitions || 9999), total: medicine.repetitions, unit: 'week' }
+}
+
+// Next weekly due date as a readable string
+export function nextWeeklyDueLabel(medicine: Medicine): string {
+  const start = new Date(medicine.startDate)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const dayOfWeek = start.getDay()
+  const todayDay = today.getDay()
+  let daysUntil = dayOfWeek - todayDay
+  if (daysUntil <= 0) daysUntil += 7
+  const next = new Date(today); next.setDate(today.getDate() + daysUntil)
+  return next.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })
+}
+
+export function formatShortDate(ymd: string): string {
+  return new Date(ymd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
+
+// Returns true if any dose is overdue today (schedule-aware)
 export function hasMedicineOverdue(logs: MedicineLog[], medicine: Medicine): boolean {
+  if (!medicine.active) return false
+  if (!isCourseStarted(medicine)) return false
+  if (isCourseComplete(medicine)) return false
+  if (medicine.repeatSchedule === 'weekly' && !isWeeklyDueToday(medicine)) return false
   return medicine.doseTimes.some(d => getDoseStatus(logs, medicine.id, d.label, d.time) === 'overdue')
 }
 

@@ -4,10 +4,11 @@ export type FeedType = 'breast' | 'bottle' | 'formula'
 export type BreastSide = 'left' | 'right' | 'both'
 export type DiaperType = 'wet' | 'dirty' | 'both' | 'dry'
 export type MedicineFor = 'baby' | 'mother'
+export type RepeatSchedule = 'daily' | 'weekly'
 
 export interface DoseTime {
   label: string  // 'Morning', 'Lunch', 'Night', etc.
-  time: string   // 'HH:MM' in 24h format, e.g. '10:00'
+  time: string   // 'HH:MM' in 24h format
 }
 
 export interface FeedingLog {
@@ -35,6 +36,9 @@ export interface Medicine {
   unit: string
   for: MedicineFor
   doseTimes: DoseTime[]
+  startDate: string          // 'YYYY-MM-DD'
+  repeatSchedule: RepeatSchedule
+  repetitions: number        // days (daily) or weeks (weekly); 0 = ongoing
   active: boolean
   notes?: string
 }
