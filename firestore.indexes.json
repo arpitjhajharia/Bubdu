@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "medicineLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "medicineId", "order": "ASCENDING" },
+        { "fieldPath": "givenAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

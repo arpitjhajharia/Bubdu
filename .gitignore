@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+functions/node_modules/
+functions/lib/
+
+# Build output
+dist/
+
+# Environment variables — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebaserc.local
+
+# IDE
+.DS_Store
+*.pem
