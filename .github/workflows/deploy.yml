@@ -30,6 +30,14 @@ jobs:
           VITE_FIREBASE_VAPID_KEY: ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
           VITE_APP_PIN: ${{ secrets.VITE_APP_PIN }}
 
+      # Hosting deploys first — app is always live even if functions fail
+      - name: Deploy hosting
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          npx firebase-tools deploy --only hosting --project "${{ secrets.VITE_FIREBASE_PROJECT_ID }}" --non-interactive
+          rm /tmp/sa.json
+
       - name: Install functions dependencies
         run: npm install
         working-directory: functions
@@ -38,9 +46,11 @@ jobs:
         run: npm run build
         working-directory: functions
 
-      - name: Deploy to Firebase (hosting + functions)
+      # Functions deploy separately — failure here does not affect the app
+      - name: Deploy functions
+        continue-on-error: true
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > /tmp/sa.json
           export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
-          npx firebase-tools deploy --only hosting,functions --project "${{ secrets.VITE_FIREBASE_PROJECT_ID }}" --non-interactive
+          npx firebase-tools deploy --only functions --project "${{ secrets.VITE_FIREBASE_PROJECT_ID }}" --non-interactive
           rm /tmp/sa.json
