@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
-import { Milk, Trash2, Timer, Plus, X } from 'lucide-react'
-import { subscribeFeedings, addFeeding, deleteFeeding, formatTime, timeAgo } from '@/lib/firestore'
+import { Milk, Trash2, Timer, Plus, X, Clock } from 'lucide-react'
+import { subscribeFeedings, addFeeding, deleteFeeding, formatTime, timeAgo, feedCountdownLabel } from '@/lib/firestore'
 import type { FeedingLog, FeedType, BreastSide } from '@/lib/types'
 
 export default function Feeding() {
@@ -13,10 +13,19 @@ export default function Feeding() {
   const [elapsed, setElapsed] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [saving, setSaving] = useState(false)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
-    return subscribeFeedings(30, setLogs)
+    const unsub = subscribeFeedings(30, setLogs)
+    const timer = setInterval(() => setTick(t => t + 1), 30000)
+    return () => { unsub(); clearInterval(timer) }
   }, [])
+
+  // tick forces countdown to re-render every 30s
+  void tick
+
+  const lastFeed = logs[0] ?? null
+  const countdown = lastFeed ? feedCountdownLabel(lastFeed) : null
 
   useEffect(() => {
     if (timerActive) {
@@ -60,6 +69,32 @@ export default function Feeding() {
 
   return (
     <div className="px-4 py-6">
+      {/* Live countdown banner */}
+      {countdown && (
+        <div className={`rounded-2xl p-4 mb-4 flex items-center gap-3 ${
+          countdown.overdue ? 'bg-red-50 border border-red-200' :
+          countdown.urgent ? 'bg-orange-50 border border-orange-200' :
+          'bg-purple-50 border border-purple-100'
+        }`}>
+          <Clock size={20} className={
+            countdown.overdue ? 'text-red-500' :
+            countdown.urgent ? 'text-orange-500' :
+            'text-purple-600'
+          } />
+          <div>
+            <p className="text-xs text-gray-500">Next feed in</p>
+            <p className={`text-xl font-bold tabular-nums ${
+              countdown.overdue ? 'text-red-600' :
+              countdown.urgent ? 'text-orange-600' :
+              'text-purple-800'
+            }`}>
+              {countdown.overdue ? `⚠ ${countdown.label}` : countdown.label}
+            </p>
+          </div>
+          <p className="ml-auto text-xs text-gray-400">2.5h from last feed</p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-purple-900">Feeding</h1>

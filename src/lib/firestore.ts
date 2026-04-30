@@ -10,7 +10,6 @@ import {
   onSnapshot,
   Timestamp,
   where,
-  getDocs,
 } from 'firebase/firestore'
 import { db } from './firebase'
 import type { FeedingLog, DiaperLog, Medicine, MedicineLog, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
@@ -89,36 +88,80 @@ export async function deleteMedicine(id: string) {
 
 // ── Medicine Logs ─────────────────────────────────────────────────────────────
 
-export function subscribeMedicineLogs(count: number, callback: (logs: MedicineLog[]) => void) {
-  const q = query(collection(db, 'medicineLogs'), orderBy('givenAt', 'desc'), limit(count))
+// Loads all logs from the past 2 days — enough to determine today's dose status
+export function subscribeMedicineLogs(callback: (logs: MedicineLog[]) => void) {
+  const twoDaysAgo = new Date()
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+  const q = query(
+    collection(db, 'medicineLogs'),
+    where('givenAt', '>=', Timestamp.fromDate(twoDaysAgo)),
+    orderBy('givenAt', 'desc')
+  )
   return onSnapshot(q, snap =>
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as MedicineLog))
   )
 }
 
-export async function logMedicine(medicine: Medicine) {
+export async function logMedicine(medicine: Medicine, doseLabel: string) {
   await addDoc(collection(db, 'medicineLogs'), {
     medicineId: medicine.id,
     medicineName: medicine.name,
     medicineFor: medicine.for,
+    doseLabel,
     givenAt: Timestamp.now(),
   })
 }
 
-export async function getLastMedicineLog(medicineId: string): Promise<MedicineLog | null> {
-  const q = query(
-    collection(db, 'medicineLogs'),
-    where('medicineId', '==', medicineId),
-    orderBy('givenAt', 'desc'),
-    limit(1)
-  )
-  const snap = await getDocs(q)
-  if (snap.empty) return null
-  return { id: snap.docs[0].id, ...snap.docs[0].data() } as MedicineLog
-}
-
 export async function deleteMedicineLog(id: string) {
   await deleteDoc(doc(db, 'medicineLogs', id))
+}
+
+// ── Dose status helpers ───────────────────────────────────────────────────────
+
+export function isDoseGivenToday(logs: MedicineLog[], medicineId: string, doseLabel: string): boolean {
+  const today = new Date().toDateString()
+  return logs.some(l =>
+    l.medicineId === medicineId &&
+    l.doseLabel === doseLabel &&
+    l.givenAt.toDate().toDateString() === today
+  )
+}
+
+// Returns the HH:MM current time string for comparison
+function nowTime(): string {
+  const n = new Date()
+  return `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`
+}
+
+export type DoseStatus = 'given' | 'upcoming' | 'overdue' | 'later'
+
+export function getDoseStatus(
+  logs: MedicineLog[],
+  medicineId: string,
+  doseLabel: string,
+  doseTime: string
+): DoseStatus {
+  if (isDoseGivenToday(logs, medicineId, doseLabel)) return 'given'
+  const now = nowTime()
+  if (doseTime <= now) return 'overdue'
+  // "upcoming" = due in the next 30 min
+  const [dh, dm] = doseTime.split(':').map(Number)
+  const [nh, nm] = now.split(':').map(Number)
+  const diffMins = (dh * 60 + dm) - (nh * 60 + nm)
+  return diffMins <= 30 ? 'upcoming' : 'later'
+}
+
+// Returns true if any dose is overdue today
+export function hasMedicineOverdue(logs: MedicineLog[], medicine: Medicine): boolean {
+  return medicine.doseTimes.some(d => getDoseStatus(logs, medicine.id, d.label, d.time) === 'overdue')
+}
+
+// Formats 'HH:MM' (24h) to '10:00 AM'
+export function formatDoseTime(time: string): string {
+  const [h, m] = time.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 || 12
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -155,7 +198,32 @@ export function nextDueTime(lastTs: Timestamp, frequencyHours: number): string {
   if (mins < 60) return `in ${mins}m`
   const hrs = Math.floor(mins / 60)
   return `in ${hrs}h ${mins % 60}m`
+}
 
+// Returns the Date when the next feed is due (2.5h after end of last feed)
+export function nextFeedDue(log: FeedingLog): Date {
+  const startMs = log.startedAt.toDate().getTime()
+  const durationMs = (log.durationMin ?? 0) * 60000
+  return new Date(startMs + durationMs + 2.5 * 3600000)
+}
+
+// Returns { label, overdue, urgent } for display
+export function feedCountdownLabel(log: FeedingLog): { label: string; overdue: boolean; urgent: boolean } {
+  const diffMs = nextFeedDue(log).getTime() - Date.now()
+  if (diffMs <= 0) {
+    const overdueMins = Math.floor(-diffMs / 60000)
+    const h = Math.floor(overdueMins / 60)
+    const m = overdueMins % 60
+    return { label: h > 0 ? `${h}h ${m}m overdue` : `${overdueMins}m overdue`, overdue: true, urgent: true }
+  }
+  const mins = Math.floor(diffMs / 60000)
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return {
+    label: h > 0 ? `${h}h ${m}m` : `${m}m`,
+    overdue: false,
+    urgent: mins <= 20,
+  }
 }
 
 export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor }

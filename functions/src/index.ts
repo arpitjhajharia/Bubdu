@@ -27,38 +27,54 @@ async function sendNotification(title: string, body: string): Promise<void> {
 export const checkAlerts = onSchedule('every 15 minutes', async () => {
   const now = Date.now()
 
-  // ── Medicine overdue alerts ─────────────────────────────────────────────
+  // ── Medicine dose alerts ─────────────────────────────────────────────────
   const medsSnap = await db.collection('medicines').where('active', '==', true).get()
+
+  // Current time as HH:MM for comparison
+  const nowDate = new Date(now)
+  const nowHHMM = `${String(nowDate.getHours()).padStart(2, '0')}:${String(nowDate.getMinutes()).padStart(2, '0')}`
+  const todayStr = nowDate.toDateString()
+
+  // Load today's medicine logs once
+  const todayStart = new Date(nowDate); todayStart.setHours(0, 0, 0, 0)
+  const todayLogsSnap = await db.collection('medicineLogs')
+    .where('givenAt', '>=', admin.firestore.Timestamp.fromDate(todayStart))
+    .get()
+  const todayLogs = todayLogsSnap.docs.map(d => d.data())
 
   for (const medDoc of medsSnap.docs) {
     const med = medDoc.data()
-    const logsSnap = await db.collection('medicineLogs')
-      .where('medicineId', '==', medDoc.id)
-      .orderBy('givenAt', 'desc')
-      .limit(1)
-      .get()
+    const doseTimes = (med.doseTimes ?? []) as Array<{ label: string; time: string }>
+    const who = med.for === 'baby' ? 'Bubdu 👶' : 'Mother 👩'
 
-    let overdueMins: number | null = null
-    if (logsSnap.empty) {
-      overdueMins = 0
-    } else {
-      const lastGiven: number = logsSnap.docs[0].data().givenAt.toMillis()
-      const nextDue = lastGiven + (med.frequencyHours as number) * 3600000
-      const diff = now - nextDue
-      if (diff > 0) overdueMins = Math.floor(diff / 60000)
-    }
+    for (const dose of doseTimes) {
+      // Check if this dose was already given today
+      const alreadyGiven = todayLogs.some(
+        l => l.medicineId === medDoc.id && l.doseLabel === dose.label && l.givenAt.toDate().toDateString() === todayStr
+      )
+      if (alreadyGiven) continue
 
-    // Alert once per cycle when 30+ min overdue
-    if (overdueMins !== null && overdueMins >= 30) {
-      const alertKey = `alerted_overdue_${medDoc.id}`
-      const lastAlerted: number = (med[alertKey] as admin.firestore.Timestamp | undefined)?.toMillis?.() ?? 0
-      if (now - lastAlerted > (med.frequencyHours as number) * 3600000) {
-        const who = med.for === 'baby' ? 'Bubdu 👶' : 'Mother 👩'
+      // Parse dose time
+      const [dh, dm] = dose.time.split(':').map(Number)
+      const [nh, nm] = nowHHMM.split(':').map(Number)
+      const doseMinutes = dh * 60 + dm
+      const nowMinutes = nh * 60 + nm
+      const diff = doseMinutes - nowMinutes
+
+      // Alert 15 min before (window: 14–16 min to avoid double-alerting)
+      if (diff >= 14 && diff <= 16) {
         await sendNotification(
-          '🚨 Medicine Overdue',
-          `${med.name as string} for ${who} is ${overdueMins} min overdue. Dose: ${med.dosage as string} ${med.unit as string}`
+          `💊 ${dose.label} medicine due in 15 min`,
+          `${med.name as string} for ${who} — ${med.dosage as string} ${med.unit as string}`
         )
-        await medDoc.ref.update({ [alertKey]: admin.firestore.Timestamp.now() })
+      }
+
+      // Alert when overdue by 15 min (window: 14–16 min past due)
+      if (diff >= -16 && diff <= -14) {
+        await sendNotification(
+          `🚨 ${dose.label} medicine overdue`,
+          `${med.name as string} for ${who} was due at ${dose.time}. Please give now.`
+        )
       }
     }
   }
@@ -68,8 +84,8 @@ export const checkAlerts = onSchedule('every 15 minutes', async () => {
   if (!feedSnap.empty) {
     const lastFeedMs: number = feedSnap.docs[0].data().startedAt.toMillis()
     const diffMins = Math.floor((now - lastFeedMs) / 60000)
-    // Alert once in the 3h–3h15m window
-    if (diffMins >= 180 && diffMins < 195) {
+    // Alert once in the 3.5h–3h45m window
+    if (diffMins >= 210 && diffMins < 225) {
       await sendNotification(
         '🍼 Time to Feed Bubdu',
         `No feed in ${Math.floor(diffMins / 60)}h ${diffMins % 60}m. Bubdu might be hungry!`

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Milk, Baby, Pill, Clock, AlertCircle } from 'lucide-react'
-import { subscribeFeedings, subscribeDiapers, subscribeMedicines, subscribeMedicineLogs, timeAgo, nextDueTime } from '@/lib/firestore'
+import { subscribeFeedings, subscribeDiapers, subscribeMedicines, subscribeMedicineLogs, timeAgo, feedCountdownLabel, hasMedicineOverdue } from '@/lib/firestore'
 import type { FeedingLog, Medicine, MedicineLog } from '@/lib/types'
 
 export default function Dashboard() {
@@ -10,6 +10,7 @@ export default function Dashboard() {
   const [todayDiapers, setTodayDiapers] = useState(0)
   const [medicines, setMedicines] = useState<Medicine[]>([])
   const [medLogs, setMedLogs] = useState<MedicineLog[]>([])
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
     const unsubs = [
@@ -19,21 +20,19 @@ export default function Dashboard() {
         setTodayDiapers(logs.filter(l => l.changedAt.toDate().toDateString() === today).length)
       }),
       subscribeMedicines(meds => setMedicines(meds.filter(m => m.active))),
-      subscribeMedicineLogs(100, setMedLogs),
+      subscribeMedicineLogs(setMedLogs),
     ]
-    return () => unsubs.forEach(u => u())
+    // Tick every 30s to keep countdown live
+    const timer = setInterval(() => setTick(t => t + 1), 30000)
+    return () => { unsubs.forEach(u => u()); clearInterval(timer) }
   }, [])
 
-  function lastLogForMed(medId: string): MedicineLog | undefined {
-    return medLogs.find(l => l.medicineId === medId)
-  }
+  // tick is used to force re-render for live countdown
+  void tick
 
-  const overdueMeds = medicines.filter(m => {
-    const last = lastLogForMed(m.id)
-    if (!last) return true
-    const nextMs = last.givenAt.toDate().getTime() + m.frequencyHours * 3600000
-    return Date.now() > nextMs
-  })
+  const overdueMeds = medicines.filter(m => hasMedicineOverdue(medLogs, m))
+
+  const feedCountdown = lastFeed ? feedCountdownLabel(lastFeed) : null
 
   const now = new Date()
   const hour = now.getHours()
@@ -45,6 +44,47 @@ export default function Dashboard() {
         <p className="text-purple-500 text-sm">{greeting}</p>
         <h1 className="text-2xl font-bold text-purple-900">Bubdu's Day 🍼</h1>
       </div>
+
+      {/* Next feed countdown — full-width prominent card */}
+      <button
+        onClick={() => navigate('/feeding')}
+        className={`w-full rounded-2xl p-4 mb-4 flex items-center gap-4 shadow-sm active:scale-95 transition-transform ${
+          !feedCountdown ? 'bg-white' :
+          feedCountdown.overdue ? 'bg-red-50 border border-red-200' :
+          feedCountdown.urgent ? 'bg-orange-50 border border-orange-200' :
+          'bg-purple-50 border border-purple-100'
+        }`}
+      >
+        <div className={`p-3 rounded-xl ${
+          !feedCountdown ? 'bg-gray-100 text-gray-400' :
+          feedCountdown.overdue ? 'bg-red-100 text-red-600' :
+          feedCountdown.urgent ? 'bg-orange-100 text-orange-600' :
+          'bg-purple-100 text-purple-700'
+        }`}>
+          <Clock size={24} />
+        </div>
+        <div className="flex-1 text-left">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Next feed</p>
+          {feedCountdown ? (
+            <>
+              <p className={`text-2xl font-bold tabular-nums ${
+                feedCountdown.overdue ? 'text-red-600' :
+                feedCountdown.urgent ? 'text-orange-600' :
+                'text-purple-900'
+              }`}>
+                {feedCountdown.overdue ? `⚠ ${feedCountdown.label}` : feedCountdown.label}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {feedCountdown.overdue ? 'Feed Bubdu now!' :
+                 feedCountdown.urgent ? 'Almost time to feed' :
+                 '2.5h from end of last feed'}
+              </p>
+            </>
+          ) : (
+            <p className="text-lg font-bold text-gray-400">No feeds logged yet</p>
+          )}
+        </div>
+      </button>
 
       {overdueMeds.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-4 flex items-start gap-3">
@@ -84,14 +124,6 @@ export default function Dashboard() {
           sub="overdue"
           color={overdueMeds.length > 0 ? 'red' : 'purple'}
           onClick={() => navigate('/medicines')}
-        />
-        <SummaryCard
-          icon={<Clock size={20} />}
-          label="Next feed"
-          value={lastFeed ? nextDueTime(lastFeed.startedAt, 2.5) : '—'}
-          sub="~2.5h interval"
-          color="orange"
-          onClick={() => navigate('/feeding')}
         />
       </div>
 

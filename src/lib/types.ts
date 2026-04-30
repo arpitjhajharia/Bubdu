@@ -5,6 +5,11 @@ export type BreastSide = 'left' | 'right' | 'both'
 export type DiaperType = 'wet' | 'dirty' | 'both' | 'dry'
 export type MedicineFor = 'baby' | 'mother'
 
+export interface DoseTime {
+  label: string  // 'Morning', 'Lunch', 'Night', etc.
+  time: string   // 'HH:MM' in 24h format, e.g. '10:00'
+}
+
 export interface FeedingLog {
   id: string
   type: FeedType
@@ -29,7 +34,7 @@ export interface Medicine {
   dosage: string
   unit: string
   for: MedicineFor
-  frequencyHours: number
+  doseTimes: DoseTime[]
   active: boolean
   notes?: string
 }
@@ -39,6 +44,7 @@ export interface MedicineLog {
   medicineId: string
   medicineName: string
   medicineFor: MedicineFor
+  doseLabel: string
   givenAt: Timestamp
   notes?: string
 }
