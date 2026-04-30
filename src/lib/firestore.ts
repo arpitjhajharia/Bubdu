@@ -55,10 +55,10 @@ export function subscribeDiapers(count: number, callback: (logs: DiaperLog[]) =>
   )
 }
 
-export async function addDiaper(type: DiaperType, notes?: string) {
+export async function addDiaper(type: DiaperType, notes?: string, changedAt?: Timestamp) {
   await addDoc(collection(db, 'diaperLogs'), {
     type,
-    changedAt: Timestamp.now(),
+    changedAt: changedAt ?? Timestamp.now(),
     ...(notes ? { notes } : {}),
   })
 }

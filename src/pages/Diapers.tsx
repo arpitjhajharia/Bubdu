@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react'
-import { Baby, Trash2, Plus, X } from 'lucide-react'
-import { subscribeDiapers, addDiaper, deleteDiaper, formatTime, formatDate, timeAgo } from '@/lib/firestore'
+import { Baby, Trash2, Plus, X, PenLine } from 'lucide-react'
+import {
+  subscribeDiapers, addDiaper, deleteDiaper,
+  formatTime, formatDate, timeAgo,
+  makeTimestamp, todayInputDate, nowInputTime,
+} from '@/lib/firestore'
 import type { DiaperLog, DiaperType } from '@/lib/types'
 
 const DIAPER_OPTIONS: { type: DiaperType; emoji: string; label: string; color: string }[] = [
-  { type: 'wet', emoji: '💧', label: 'Wet', color: 'bg-blue-100 text-blue-700' },
-  { type: 'dirty', emoji: '💩', label: 'Dirty', color: 'bg-yellow-100 text-yellow-700' },
-  { type: 'both', emoji: '🔄', label: 'Both', color: 'bg-orange-100 text-orange-700' },
-  { type: 'dry', emoji: '✅', label: 'Dry/Clean', color: 'bg-green-100 text-green-700' },
+  { type: 'wet',   emoji: '💧', label: 'Wet',      color: 'bg-blue-100 text-blue-700' },
+  { type: 'dirty', emoji: '💩', label: 'Dirty',    color: 'bg-yellow-100 text-yellow-700' },
+  { type: 'both',  emoji: '🔄', label: 'Both',     color: 'bg-orange-100 text-orange-700' },
+  { type: 'dry',   emoji: '✅', label: 'Dry/Clean', color: 'bg-green-100 text-green-700' },
 ]
 
 export default function Diapers() {
   const [logs, setLogs] = useState<DiaperLog[]>([])
   const [showModal, setShowModal] = useState(false)
-  const [selected, setSelected] = useState<DiaperType>('wet')
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     return subscribeDiapers(50, setLogs)
@@ -23,15 +24,6 @@ export default function Diapers() {
 
   const today = new Date().toDateString()
   const todayCount = logs.filter(l => l.changedAt.toDate().toDateString() === today).length
-
-  async function handleSave() {
-    setSaving(true)
-    await addDiaper(selected, notes || undefined)
-    setShowModal(false)
-    setSelected('wet')
-    setNotes('')
-    setSaving(false)
-  }
 
   const grouped = logs.reduce<Record<string, DiaperLog[]>>((acc, log) => {
     const day = formatDate(log.changedAt)
@@ -92,10 +84,7 @@ export default function Diapers() {
                     <p className="text-sm font-medium text-gray-700">{formatTime(log.changedAt)}</p>
                     <p className="text-xs text-gray-400">{timeAgo(log.changedAt)}</p>
                   </div>
-                  <button
-                    onClick={() => deleteDiaper(log.id)}
-                    className="text-gray-300 active:text-red-500 transition-colors"
-                  >
+                  <button onClick={() => deleteDiaper(log.id)} className="text-gray-300 active:text-red-500 transition-colors">
                     <Trash2 size={16} />
                   </button>
                 </div>
@@ -105,50 +94,100 @@ export default function Diapers() {
         </div>
       ))}
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end" onClick={() => setShowModal(false)}>
-          <div
-            className="bg-white w-full max-w-md mx-auto rounded-t-3xl p-6 pb-10"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-purple-900">Log Diaper Change</h2>
-              <button onClick={() => setShowModal(false)}><X size={20} className="text-gray-400" /></button>
-            </div>
+      {showModal && <DiaperModal onClose={() => setShowModal(false)} />}
+    </div>
+  )
+}
 
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {DIAPER_OPTIONS.map(o => (
-                <button
-                  key={o.type}
-                  onClick={() => setSelected(o.type)}
-                  className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${
-                    selected === o.type ? 'border-purple-500 bg-purple-50' : 'border-transparent bg-gray-50'
-                  }`}
-                >
-                  <span className="text-2xl">{o.emoji}</span>
-                  <span className="font-medium text-gray-800">{o.label}</span>
-                </button>
-              ))}
-            </div>
+function DiaperModal({ onClose }: { onClose: () => void }) {
+  const [selected, setSelected] = useState<DiaperType>('wet')
+  const [notes, setNotes] = useState('')
+  const [manual, setManual] = useState(false)
+  const [manualDate, setManualDate] = useState(todayInputDate())
+  const [manualTime, setManualTime] = useState(nowInputTime())
+  const [saving, setSaving] = useState(false)
 
-            <input
-              type="text"
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Notes (optional)"
-              className="w-full border border-purple-200 rounded-xl px-4 py-3 mb-4 focus:outline-none focus:border-purple-500"
-            />
+  async function handleSave() {
+    setSaving(true)
+    const ts = manual ? makeTimestamp(manualDate, manualTime) : undefined
+    await addDiaper(selected, notes || undefined, ts)
+    onClose()
+  }
 
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save Change'}
-            </button>
-          </div>
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end" onClick={onClose}>
+      <div
+        className="bg-white w-full max-w-md mx-auto rounded-t-3xl p-6 pb-10"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold text-purple-900">Log Diaper Change</h2>
+          <button onClick={onClose}><X size={20} className="text-gray-400" /></button>
         </div>
-      )}
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {DIAPER_OPTIONS.map(o => (
+            <button
+              key={o.type}
+              onClick={() => setSelected(o.type)}
+              className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${
+                selected === o.type ? 'border-purple-500 bg-purple-50' : 'border-transparent bg-gray-50'
+              }`}
+            >
+              <span className="text-2xl">{o.emoji}</span>
+              <span className="font-medium text-gray-800">{o.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <input
+          type="text"
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder="Notes (optional)"
+          className="w-full border border-purple-200 rounded-xl px-4 py-3 mb-3 focus:outline-none focus:border-purple-500"
+        />
+
+        {/* Manual time toggle */}
+        <button
+          onClick={() => setManual(m => !m)}
+          className="w-full flex items-center justify-center gap-2 text-sm text-purple-500 py-2 mb-3"
+        >
+          <PenLine size={15} />
+          {manual ? 'Use current time' : 'Missed it? Set the time'}
+        </button>
+
+        {manual && (
+          <div className="flex gap-3 mb-4">
+            <div className="flex-1">
+              <label className="text-sm text-gray-500 block mb-1">Date</label>
+              <input
+                type="date"
+                value={manualDate}
+                onChange={e => setManualDate(e.target.value)}
+                className="w-full border border-purple-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm text-gray-500 block mb-1">Time</label>
+              <input
+                type="time"
+                value={manualTime}
+                onChange={e => setManualTime(e.target.value)}
+                className="w-full border border-purple-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save Change'}
+        </button>
+      </div>
     </div>
   )
 }

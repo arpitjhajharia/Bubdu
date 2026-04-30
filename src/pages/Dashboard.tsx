@@ -89,13 +89,22 @@ export default function Dashboard() {
       {overdueMeds.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-4 flex items-start gap-3">
           <AlertCircle className="text-red-500 mt-0.5 shrink-0" size={20} />
-          <div>
-            <p className="font-semibold text-red-700 text-sm">Medicine overdue</p>
-            {overdueMeds.map(m => (
-              <p key={m.id} className="text-red-600 text-sm">
-                {m.name} ({m.for})
-              </p>
-            ))}
+          <div className="flex-1">
+            <p className="font-semibold text-red-700 text-sm mb-2">Medicine overdue</p>
+            {(['baby', 'mother'] as const).map(who => {
+              const group = overdueMeds.filter(m => m.for === who)
+              if (group.length === 0) return null
+              return (
+                <div key={who} className="mb-1.5 last:mb-0">
+                  <p className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-0.5">
+                    {who === 'baby' ? '👶 Bubdu' : '👩 Aaru'}
+                  </p>
+                  {group.map(m => (
+                    <p key={m.id} className="text-red-600 text-sm">• {m.name}</p>
+                  ))}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
