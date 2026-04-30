@@ -29,10 +29,12 @@ export async function addFeeding(data: {
   durationMin?: number
   amountMl?: number
   notes?: string
+  startedAt?: Timestamp
 }) {
+  const { startedAt, ...rest } = data
   await addDoc(collection(db, 'feedingLogs'), {
-    ...data,
-    startedAt: Timestamp.now(),
+    ...rest,
+    startedAt: startedAt ?? Timestamp.now(),
   })
 }
 
@@ -288,6 +290,23 @@ export function feedCountdownLabel(log: FeedingLog): { label: string; overdue: b
     overdue: false,
     urgent: mins <= 20,
   }
+}
+
+// Builds a Firestore Timestamp from a date string ('YYYY-MM-DD') and time string ('HH:MM')
+export function makeTimestamp(dateStr: string, timeStr: string): Timestamp {
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  const [h, m] = timeStr.split(':').map(Number)
+  return Timestamp.fromDate(new Date(y, mo - 1, d, h, m))
+}
+
+export function todayInputDate(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export function nowInputTime(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor }

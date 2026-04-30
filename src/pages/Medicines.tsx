@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Pill, Plus, Trash2, X, Check, Clock, AlertCircle, CalendarDays } from 'lucide-react'
+import { Pill, Plus, Trash2, X, Check, Clock, AlertCircle, CalendarDays, Pencil } from 'lucide-react'
 import {
   subscribeMedicines, subscribeMedicineLogs,
   addMedicine, deleteMedicine, updateMedicine,
@@ -26,6 +26,7 @@ export default function Medicines() {
   const [medicines, setMedicines] = useState<Medicine[]>([])
   const [logs, setLogs] = useState<MedicineLog[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null)
   const [tab, setTab] = useState<MedicineFor>('baby')
   const [tick, setTick] = useState(0)
 
@@ -78,6 +79,7 @@ export default function Medicines() {
           <MedicineCard key={med.id} medicine={med} logs={logs}
             onGive={label => logMedicine(med, label)}
             onDelete={() => deleteMedicine(med.id)}
+            onEdit={() => setEditingMedicine(med)}
             onToggle={() => updateMedicine(med.id, { active: !med.active })} />
         ))}
       </div>
@@ -90,6 +92,7 @@ export default function Medicines() {
               <MedicineCard key={med.id} medicine={med} logs={logs}
                 onGive={label => logMedicine(med, label)}
                 onDelete={() => deleteMedicine(med.id)}
+                onEdit={() => setEditingMedicine(med)}
                 onToggle={() => updateMedicine(med.id, { active: !med.active })} />
             ))}
           </div>
@@ -118,18 +121,30 @@ export default function Medicines() {
       )}
 
       {showAddModal && (
-        <AddMedicineModal defaultFor={tab} onClose={() => setShowAddModal(false)}
-          onAdd={async data => { await addMedicine(data); setShowAddModal(false) }} />
+        <MedicineFormModal defaultFor={tab} onClose={() => setShowAddModal(false)}
+          onSave={async data => { await addMedicine(data); setShowAddModal(false) }} />
+      )}
+
+      {editingMedicine && (
+        <MedicineFormModal
+          defaultFor={editingMedicine.for}
+          existing={editingMedicine}
+          onClose={() => setEditingMedicine(null)}
+          onSave={async data => {
+            await updateMedicine(editingMedicine.id, data)
+            setEditingMedicine(null)
+          }} />
       )}
     </div>
   )
 }
 
-function MedicineCard({ medicine, logs, onGive, onDelete, onToggle }: {
+function MedicineCard({ medicine, logs, onGive, onDelete, onEdit, onToggle }: {
   medicine: Medicine
   logs: MedicineLog[]
   onGive: (doseLabel: string) => Promise<void>
   onDelete: () => void
+  onEdit: () => void
   onToggle: () => void
 }) {
   const complete = isCourseComplete(medicine)
@@ -192,9 +207,14 @@ function MedicineCard({ medicine, logs, onGive, onDelete, onToggle }: {
             </div>
           )}
         </div>
-        <button onClick={onDelete} className="text-gray-300 active:text-red-500 mt-1 shrink-0">
-          <Trash2 size={16} />
-        </button>
+        <div className="flex flex-col gap-2 mt-1 shrink-0">
+          <button onClick={onEdit} className="text-gray-300 active:text-purple-500">
+            <Pencil size={15} />
+          </button>
+          <button onClick={onDelete} className="text-gray-300 active:text-red-500">
+            <Trash2 size={15} />
+          </button>
+        </div>
       </div>
 
       {/* Dose slots */}
@@ -277,22 +297,23 @@ function DoseRow({ dose, status, onGive }: {
   )
 }
 
-function AddMedicineModal({ defaultFor, onClose, onAdd }: {
+function MedicineFormModal({ defaultFor, existing, onClose, onSave }: {
   defaultFor: MedicineFor
+  existing?: Medicine
   onClose: () => void
-  onAdd: (data: Omit<Medicine, 'id'>) => Promise<void>
+  onSave: (data: Omit<Medicine, 'id'>) => Promise<void>
 }) {
-  const [name, setName] = useState('')
-  const [dosage, setDosage] = useState('')
-  const [unit, setUnit] = useState('ml')
-  const [forWho, setForWho] = useState<MedicineFor>(defaultFor)
-  const [notes, setNotes] = useState('')
+  const [name, setName] = useState(existing?.name ?? '')
+  const [dosage, setDosage] = useState(existing?.dosage ?? '')
+  const [unit, setUnit] = useState(existing?.unit ?? 'ml')
+  const [forWho, setForWho] = useState<MedicineFor>(existing?.for ?? defaultFor)
+  const [notes, setNotes] = useState(existing?.notes ?? '')
   const [saving, setSaving] = useState(false)
-  const [doseTimes, setDoseTimes] = useState<DoseTime[]>([{ label: 'Morning', time: '08:00' }])
-  const [startDate, setStartDate] = useState(todayYMD())
-  const [repeatSchedule, setRepeatSchedule] = useState<RepeatSchedule>('daily')
-  const [repetitions, setRepetitions] = useState('7')
-  const [ongoing, setOngoing] = useState(false)
+  const [doseTimes, setDoseTimes] = useState<DoseTime[]>(existing?.doseTimes ?? [{ label: 'Morning', time: '08:00' }])
+  const [startDate, setStartDate] = useState(existing?.startDate ?? todayYMD())
+  const [repeatSchedule, setRepeatSchedule] = useState<RepeatSchedule>(existing?.repeatSchedule ?? 'daily')
+  const [repetitions, setRepetitions] = useState(existing?.repetitions ? String(existing.repetitions) : '7')
+  const [ongoing, setOngoing] = useState(existing ? existing.repetitions === 0 : false)
 
   function togglePreset(preset: DoseTime) {
     setDoseTimes(prev => {
@@ -317,11 +338,11 @@ function AddMedicineModal({ defaultFor, onClose, onAdd }: {
   async function handleSave() {
     if (!name || !dosage || doseTimes.length === 0) return
     setSaving(true)
-    await onAdd({
+    await onSave({
       name, dosage, unit, for: forWho, doseTimes,
       startDate, repeatSchedule,
       repetitions: ongoing ? 0 : Number(repetitions),
-      active: true,
+      active: existing?.active ?? true,
       ...(notes ? { notes } : {}),
     })
   }
@@ -333,7 +354,7 @@ function AddMedicineModal({ defaultFor, onClose, onAdd }: {
       <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl p-6 pb-10 max-h-[92vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold text-purple-900">Add Medicine</h2>
+          <h2 className="text-lg font-bold text-purple-900">{existing ? 'Edit Medicine' : 'Add Medicine'}</h2>
           <button onClick={onClose}><X size={20} className="text-gray-400" /></button>
         </div>
 
@@ -442,7 +463,7 @@ function AddMedicineModal({ defaultFor, onClose, onAdd }: {
 
         <button onClick={handleSave} disabled={saving || !name || !dosage || doseTimes.length === 0}
           className="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold mt-2 disabled:opacity-50">
-          {saving ? 'Adding…' : 'Add Medicine'}
+          {saving ? 'Saving…' : existing ? 'Save Changes' : 'Add Medicine'}
         </button>
       </div>
     </div>
