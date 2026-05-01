@@ -1,11 +1,12 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Milk, Baby, Pill } from 'lucide-react'
+import { LayoutDashboard, Milk, Baby, Pill, Scale } from 'lucide-react'
 
 const nav = [
   { to: '/', icon: LayoutDashboard, label: 'Home' },
   { to: '/feeding', icon: Milk, label: 'Feeding' },
   { to: '/diapers', icon: Baby, label: 'Diapers' },
   { to: '/medicines', icon: Pill, label: 'Medicines' },
+  { to: '/weight', icon: Scale, label: 'Weight' },
 ]
 
 export default function Layout() {
@@ -23,12 +24,12 @@ export default function Layout() {
               to={to}
               end={to === '/'}
               className={({ isActive }) =>
-                `flex-1 flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors ${
+                `flex-1 flex flex-col items-center gap-0.5 py-2 text-xs font-medium transition-colors ${
                   isActive ? 'text-purple-700' : 'text-gray-400'
                 }`
               }
             >
-              <Icon size={22} />
+              <Icon size={20} />
               {label}
             </NavLink>
           ))}

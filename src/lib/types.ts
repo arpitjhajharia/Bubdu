@@ -52,3 +52,10 @@ export interface MedicineLog {
   givenAt: Timestamp
   notes?: string
 }
+
+export interface WeightLog {
+  id: string
+  weightKg: number   // stored up to 3 decimal places
+  recordedAt: Timestamp
+  notes?: string
+}

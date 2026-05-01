@@ -12,7 +12,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { FeedingLog, DiaperLog, Medicine, MedicineLog, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
+import type { FeedingLog, DiaperLog, Medicine, MedicineLog, WeightLog, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
 
 // ── Feeding ──────────────────────────────────────────────────────────────────
 
@@ -61,6 +61,10 @@ export async function addDiaper(type: DiaperType, notes?: string, changedAt?: Ti
     changedAt: changedAt ?? Timestamp.now(),
     ...(notes ? { notes } : {}),
   })
+}
+
+export async function updateDiaper(id: string, data: Partial<DiaperLog>) {
+  await updateDoc(doc(db, 'diaperLogs', id), data)
 }
 
 export async function deleteDiaper(id: string) {
@@ -270,7 +274,7 @@ export function nextDueTime(lastTs: Timestamp, frequencyHours: number): string {
 export function nextFeedDue(log: FeedingLog): Date {
   const startMs = log.startedAt.toDate().getTime()
   const durationMs = (log.durationMin ?? 0) * 60000
-  return new Date(startMs + durationMs + 2.5 * 3600000)
+  return new Date(startMs + durationMs + 2 * 3600000)
 }
 
 // Returns { label, overdue, urgent } for display
@@ -309,4 +313,29 @@ export function nowInputTime(): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor }
+// ── Weight ────────────────────────────────────────────────────────────────────
+
+export function subscribeWeights(callback: (logs: WeightLog[]) => void) {
+  const q = query(collection(db, 'weightLogs'), orderBy('recordedAt', 'desc'))
+  return onSnapshot(q, snap =>
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as WeightLog))
+  )
+}
+
+export async function addWeight(weightKg: number, notes?: string, recordedAt?: Timestamp) {
+  await addDoc(collection(db, 'weightLogs'), {
+    weightKg,
+    recordedAt: recordedAt ?? Timestamp.now(),
+    ...(notes ? { notes } : {}),
+  })
+}
+
+export async function updateWeight(id: string, data: Partial<WeightLog>) {
+  await updateDoc(doc(db, 'weightLogs', id), data)
+}
+
+export async function deleteWeight(id: string) {
+  await deleteDoc(doc(db, 'weightLogs', id))
+}
+
+export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, WeightLog }
