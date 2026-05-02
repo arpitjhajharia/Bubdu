@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { Milk, Trash2, Pencil, Plus, X, Clock } from 'lucide-react'
 import {
   subscribeFeedings, addFeeding, updateFeeding, deleteFeeding,
-  formatTime, formatDate, feedCountdownLabel,
+  formatTime, formatDate, feedCountdownLabel, feedIntervalLabel,
   makeTimestamp, todayInputDate, nowInputTime,
 } from '@/lib/firestore'
 import type { FeedingLog, FeedType, BreastSide } from '@/lib/types'
@@ -76,7 +76,7 @@ export default function Feeding() {
             </p>
           </div>
           <p className="ml-auto text-xs text-gray-400">
-            {lastFeed?.type === 'formula' ? '2h' : '2.5h'} from end of last feed
+            {lastFeed ? feedIntervalLabel(lastFeed) : '2.5h'} from end of last feed
           </p>
         </div>
       )}

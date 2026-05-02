@@ -4,7 +4,7 @@ import { Clock, AlertCircle, Scale } from 'lucide-react'
 import {
   subscribeFeedings, subscribeDiapers, subscribeMedicines, subscribeMedicineLogs,
   subscribeWeights, subscribeNazar, subscribeMassage,
-  feedCountdownLabel, hasMedicineOverdue,
+  feedCountdownLabel, feedIntervalLabel, hasMedicineOverdue,
   todayInputDate,
 } from '@/lib/firestore'
 import type { FeedingLog, Medicine, MedicineLog, WeightLog, NazarLog, MassageLog } from '@/lib/types'
@@ -96,7 +96,7 @@ export default function Dashboard() {
                 <p className="text-xs text-gray-400">
                   {feedCountdown.overdue ? 'Feed Bubdu now!' :
                    feedCountdown.urgent ? 'Almost time to feed' :
-                   `${lastFeed?.type === 'formula' ? '2h' : '2.5h'} from end of last feed`}
+                   `${lastFeed ? feedIntervalLabel(lastFeed) : '2.5h'} from end of last feed`}
                 </p>
               </>
             ) : (

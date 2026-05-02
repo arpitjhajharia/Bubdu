@@ -280,12 +280,25 @@ export function nextDueTime(lastTs: Timestamp, frequencyHours: number): string {
   return `in ${hrs}h ${mins % 60}m`
 }
 
-// Returns the Date when the next feed is due: 2h for formula, 2.5h for breast/bottle
+// Returns hours until next feed based on type and amount
+export function feedIntervalHours(log: FeedingLog): number {
+  if (log.type !== 'formula') return 2.5
+  const ml = log.amountMl ?? 0
+  if (ml < 41) return 2
+  if (ml < 51) return 2.5
+  return 3
+}
+
+export function feedIntervalLabel(log: FeedingLog): string {
+  const h = feedIntervalHours(log)
+  return h === 2 ? '2h' : h === 2.5 ? '2.5h' : '3h'
+}
+
+// Returns the Date when the next feed is due
 export function nextFeedDue(log: FeedingLog): Date {
   const startMs = log.startedAt.toDate().getTime()
   const durationMs = (log.durationMin ?? 0) * 60000
-  const intervalMs = (log.type === 'formula' ? 2 : 2.5) * 3600000
-  return new Date(startMs + durationMs + intervalMs)
+  return new Date(startMs + durationMs + feedIntervalHours(log) * 3600000)
 }
 
 // Returns { label, overdue, urgent } for display
