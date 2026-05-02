@@ -11,10 +11,10 @@ const nav = [
   { to: '/reports', icon: ClipboardList, label: 'Reports' },
 ]
 
-export default function Layout() {
+export default function Layout({ hasNotifBanner = false }: { hasNotifBanner?: boolean }) {
   return (
     <div className="flex flex-col min-h-screen max-w-md mx-auto">
-      <main className="flex-1 overflow-y-auto pb-24">
+      <main className={`flex-1 overflow-y-auto pb-24 ${hasNotifBanner ? 'pt-12' : ''}`}>
         <Outlet />
       </main>
 

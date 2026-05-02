@@ -30,9 +30,8 @@ onBackgroundMessage(messaging, payload => {
   self.registration.showNotification(title, {
     body,
     icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
-    vibrate: [200, 100, 200],
     tag: 'bubdu-alert',
+    renotify: true,
   })
 })
 
