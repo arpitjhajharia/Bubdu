@@ -12,13 +12,14 @@ function messaging() {
 }
 
 export type NotifStatus = 'ok' | 'denied' | 'unsupported' | 'error'
+export interface NotifResult { status: NotifStatus; error?: string }
 
-export async function registerForNotifications(): Promise<NotifStatus> {
-  if (!('Notification' in window) || !('serviceWorker' in navigator)) return 'unsupported'
+export async function registerForNotifications(): Promise<NotifResult> {
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) return { status: 'unsupported' }
 
   try {
     const permission = await Notification.requestPermission()
-    if (permission !== 'granted') return 'denied'
+    if (permission !== 'granted') return { status: 'denied' }
 
     const swReg = await navigator.serviceWorker.ready
     const token = await getToken(messaging(), {
@@ -27,8 +28,9 @@ export async function registerForNotifications(): Promise<NotifStatus> {
     })
 
     if (!token) {
-      await saveDebugError('getToken returned null — check VAPID key in Firebase console')
-      return 'error'
+      const error = 'getToken returned null — check VAPID key in Firebase console'
+      await saveDebugError(error)
+      return { status: 'error', error }
     }
 
     await setDoc(doc(db, 'fcmTokens', token), {
@@ -36,12 +38,12 @@ export async function registerForNotifications(): Promise<NotifStatus> {
       updatedAt: Timestamp.now(),
       ua: navigator.userAgent.substring(0, 200),
     })
-    return 'ok'
+    return { status: 'ok' }
   } catch (err) {
-    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    const error = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
     console.error('FCM registration failed:', err)
-    await saveDebugError(msg)
-    return 'error'
+    await saveDebugError(error)
+    return { status: 'error', error }
   }
 }
 
