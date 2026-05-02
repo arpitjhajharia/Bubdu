@@ -3,6 +3,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   doc,
   query,
   orderBy,
@@ -12,7 +13,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { FeedingLog, DiaperLog, Medicine, MedicineLog, WeightLog, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
+import type { FeedingLog, DiaperLog, Medicine, MedicineLog, WeightLog, NazarLog, IncidentLog, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
 
 // ── Feeding ──────────────────────────────────────────────────────────────────
 
@@ -270,11 +271,12 @@ export function nextDueTime(lastTs: Timestamp, frequencyHours: number): string {
   return `in ${hrs}h ${mins % 60}m`
 }
 
-// Returns the Date when the next feed is due (2.5h after end of last feed)
+// Returns the Date when the next feed is due: 2h for formula, 2.5h for breast/bottle
 export function nextFeedDue(log: FeedingLog): Date {
   const startMs = log.startedAt.toDate().getTime()
   const durationMs = (log.durationMin ?? 0) * 60000
-  return new Date(startMs + durationMs + 2 * 3600000)
+  const intervalMs = (log.type === 'formula' ? 2 : 2.5) * 3600000
+  return new Date(startMs + durationMs + intervalMs)
 }
 
 // Returns { label, overdue, urgent } for display
@@ -338,4 +340,46 @@ export async function deleteWeight(id: string) {
   await deleteDoc(doc(db, 'weightLogs', id))
 }
 
-export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, WeightLog }
+// ── Nazar ─────────────────────────────────────────────────────────────────────
+
+export function subscribeNazar(callback: (logs: NazarLog[]) => void) {
+  const q = query(collection(db, 'nazarLogs'), orderBy('date', 'desc'))
+  return onSnapshot(q, snap =>
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as NazarLog))
+  )
+}
+
+export async function markNazarDone(date: string) {
+  await setDoc(doc(db, 'nazarLogs', date), { date, doneAt: Timestamp.now() })
+}
+
+export async function unmarkNazar(date: string) {
+  await deleteDoc(doc(db, 'nazarLogs', date))
+}
+
+// ── Incidents (Reports) ───────────────────────────────────────────────────────
+
+export function subscribeIncidents(callback: (logs: IncidentLog[]) => void) {
+  const q = query(collection(db, 'incidentLogs'), orderBy('recordedAt', 'desc'))
+  return onSnapshot(q, snap =>
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as IncidentLog))
+  )
+}
+
+export async function addIncident(title: string, description?: string, recordedAt?: Timestamp) {
+  await addDoc(collection(db, 'incidentLogs'), {
+    title,
+    recordedAt: recordedAt ?? Timestamp.now(),
+    ...(description ? { description } : {}),
+  })
+}
+
+export async function updateIncident(id: string, data: Partial<IncidentLog>) {
+  await updateDoc(doc(db, 'incidentLogs', id), data)
+}
+
+export async function deleteIncident(id: string) {
+  await deleteDoc(doc(db, 'incidentLogs', id))
+}
+
+export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, WeightLog, NazarLog, IncidentLog }

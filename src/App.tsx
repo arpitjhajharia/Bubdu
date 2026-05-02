@@ -7,6 +7,8 @@ import Feeding from '@/pages/Feeding'
 import Diapers from '@/pages/Diapers'
 import Medicines from '@/pages/Medicines'
 import Weight from '@/pages/Weight'
+import Nazar from '@/pages/Nazar'
+import Reports from '@/pages/Reports'
 import { ensureAuth } from '@/lib/firebase'
 import { registerForNotifications, onForegroundMessage } from '@/lib/fcm'
 
@@ -59,6 +61,8 @@ export default function App() {
           <Route path="diapers" element={<Diapers />} />
           <Route path="medicines" element={<Medicines />} />
           <Route path="weight" element={<Weight />} />
+          <Route path="nazar" element={<Nazar />} />
+          <Route path="reports" element={<Reports />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

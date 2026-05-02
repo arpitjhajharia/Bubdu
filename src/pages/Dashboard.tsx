@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Milk, Baby, Clock, AlertCircle, Scale } from 'lucide-react'
+import { Milk, Baby, Clock, AlertCircle, Scale, Eye } from 'lucide-react'
 import {
   subscribeFeedings, subscribeDiapers, subscribeMedicines, subscribeMedicineLogs,
-  subscribeWeights, feedCountdownLabel, hasMedicineOverdue,
+  subscribeWeights, subscribeNazar, markNazarDone, feedCountdownLabel, hasMedicineOverdue,
+  todayInputDate,
 } from '@/lib/firestore'
-import type { FeedingLog, Medicine, MedicineLog, WeightLog } from '@/lib/types'
+import type { FeedingLog, Medicine, MedicineLog, WeightLog, NazarLog } from '@/lib/types'
 
 function feedEndAgo(log: FeedingLog): string {
   const endMs = log.startedAt.toDate().getTime() + (log.durationMin ?? 0) * 60000
@@ -25,6 +26,7 @@ export default function Dashboard() {
   const [medicines, setMedicines] = useState<Medicine[]>([])
   const [medLogs, setMedLogs] = useState<MedicineLog[]>([])
   const [latestWeight, setLatestWeight] = useState<WeightLog | null>(null)
+  const [nazarLogs, setNazarLogs] = useState<NazarLog[]>([])
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
@@ -44,6 +46,7 @@ export default function Dashboard() {
       subscribeMedicines(meds => setMedicines(meds.filter(m => m.active))),
       subscribeMedicineLogs(setMedLogs),
       subscribeWeights(logs => setLatestWeight(logs[0] ?? null)),
+      subscribeNazar(setNazarLogs),
     ]
     const timer = setInterval(() => setTick(t => t + 1), 30000)
     return () => { unsubs.forEach(u => u()); clearInterval(timer) }
@@ -51,6 +54,8 @@ export default function Dashboard() {
 
   void tick
 
+  const today = todayInputDate()
+  const isNazarDoneToday = nazarLogs.some(l => l.date === today)
   const overdueMeds = medicines.filter(m => hasMedicineOverdue(medLogs, m))
   const feedCountdown = lastFeed ? feedCountdownLabel(lastFeed) : null
 
@@ -97,7 +102,7 @@ export default function Dashboard() {
               <p className="text-xs text-gray-400">
                 {feedCountdown.overdue ? 'Feed Bubdu now!' :
                  feedCountdown.urgent ? 'Almost time to feed' :
-                 '2h from end of last feed'}
+                 `${lastFeed?.type === 'formula' ? '2h' : '2.5h'} from end of last feed`}
               </p>
             </>
           ) : (
@@ -171,15 +176,38 @@ export default function Dashboard() {
             <p className="text-xs text-gray-400">None logged today</p>
           )}
         </button>
+
+        {/* Nazar */}
+        <div className={`col-span-2 rounded-2xl p-3 shadow-sm flex items-center gap-3 ${isNazarDoneToday ? 'bg-green-50' : 'bg-white'}`}>
+          <button onClick={() => navigate('/nazar')} className="flex items-center gap-3 flex-1 min-w-0">
+            <div className={`p-1.5 rounded-lg shrink-0 ${isNazarDoneToday ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'}`}>
+              <Eye size={16} />
+            </div>
+            <div className="text-left">
+              <p className="text-xs font-semibold text-gray-500">Nazar</p>
+              <p className={`text-sm font-bold ${isNazarDoneToday ? 'text-green-700' : 'text-gray-800'}`}>
+                {isNazarDoneToday ? '✓ Done today' : 'Not done yet'}
+              </p>
+            </div>
+          </button>
+          {!isNazarDoneToday && (
+            <button
+              onClick={() => markNazarDone(today)}
+              className="bg-purple-600 text-white px-3 py-1.5 rounded-full text-xs font-semibold active:scale-95 transition-transform shrink-0"
+            >
+              Mark Done
+            </button>
+          )}
+        </div>
       </div>
 
       <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Quick Log</h2>
       <div className="grid grid-cols-3 gap-2">
-        <QuickButton emoji="🤱" label="Breast"   onClick={() => navigate('/feeding')} />
-        <QuickButton emoji="🍼" label="Bottle"   onClick={() => navigate('/feeding')} />
-        <QuickButton emoji="🥛" label="Formula"  onClick={() => navigate('/feeding')} />
-        <QuickButton emoji="💧" label="Wet"      onClick={() => navigate('/diapers')} />
-        <QuickButton emoji="💩" label="Dirty"    onClick={() => navigate('/diapers')} />
+        <QuickButton emoji="🤱" label="Breast"   onClick={() => navigate('/feeding', { state: { openModal: true, type: 'breast' } })} />
+        <QuickButton emoji="🍼" label="Bottle"   onClick={() => navigate('/feeding', { state: { openModal: true, type: 'bottle' } })} />
+        <QuickButton emoji="🥛" label="Formula"  onClick={() => navigate('/feeding', { state: { openModal: true, type: 'formula' } })} />
+        <QuickButton emoji="💧" label="Wet"      onClick={() => navigate('/diapers', { state: { openModal: true, type: 'wet' } })} />
+        <QuickButton emoji="💩" label="Dirty"    onClick={() => navigate('/diapers', { state: { openModal: true, type: 'dirty' } })} />
         <QuickButton emoji="💊" label="Medicine" onClick={() => navigate('/medicines')} />
       </div>
     </div>

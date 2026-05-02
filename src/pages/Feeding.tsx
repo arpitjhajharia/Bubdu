@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Milk, Trash2, Pencil, Plus, X, Clock } from 'lucide-react'
 import {
   subscribeFeedings, addFeeding, updateFeeding, deleteFeeding,
@@ -25,8 +26,10 @@ function logEndTime(log: FeedingLog): string {
 }
 
 export default function Feeding() {
+  const location = useLocation()
   const [logs, setLogs] = useState<FeedingLog[]>([])
   const [showModal, setShowModal] = useState(false)
+  const [quickType, setQuickType] = useState<FeedType | undefined>(undefined)
   const [editingLog, setEditingLog] = useState<FeedingLog | null>(null)
   const [tick, setTick] = useState(0)
 
@@ -35,6 +38,15 @@ export default function Feeding() {
     const timer = setInterval(() => setTick(t => t + 1), 30000)
     return () => { unsub(); clearInterval(timer) }
   }, [])
+
+  useEffect(() => {
+    const state = location.state as { openModal?: boolean; type?: FeedType } | null
+    if (state?.openModal) {
+      setQuickType(state.type)
+      setShowModal(true)
+      window.history.replaceState({}, '')
+    }
+  }, [location.state])
 
   void tick
 
@@ -63,7 +75,9 @@ export default function Feeding() {
               {countdown.overdue ? `⚠ ${countdown.label}` : countdown.label}
             </p>
           </div>
-          <p className="ml-auto text-xs text-gray-400">2h from last feed</p>
+          <p className="ml-auto text-xs text-gray-400">
+            {lastFeed?.type === 'formula' ? '2h' : '2.5h'} from end of last feed
+          </p>
         </div>
       )}
 
@@ -115,16 +129,23 @@ export default function Feeding() {
         </div>
       ))}
 
-      {showModal && <FeedModal onClose={() => setShowModal(false)} />}
+      {showModal && <FeedModal initialType={quickType} onClose={() => { setShowModal(false); setQuickType(undefined) }} />}
       {editingLog && <FeedModal existing={editingLog} onClose={() => setEditingLog(null)} />}
     </div>
   )
 }
 
-function FeedModal({ onClose, existing }: { onClose: () => void; existing?: FeedingLog }) {
-  const [type, setType] = useState<FeedType>(existing?.type ?? 'breast')
+function FeedModal({ onClose, existing, initialType }: { onClose: () => void; existing?: FeedingLog; initialType?: FeedType }) {
+  const [type, setType] = useState<FeedType>(existing?.type ?? initialType ?? 'breast')
   const [side, setSide] = useState<BreastSide>(existing?.side ?? 'left')
-  const [amountMl, setAmountMl] = useState(existing?.amountMl ? String(existing.amountMl) : '')
+  const initType = existing?.type ?? initialType ?? 'breast'
+  const [amountMl, setAmountMl] = useState(
+    existing?.amountMl ? String(existing.amountMl) : initType === 'formula' ? '60' : ''
+  )
+
+  useEffect(() => {
+    if (type === 'formula' && !amountMl) setAmountMl('60')
+  }, [type])
   const [date, setDate] = useState(existing ? tsToDate(existing.startedAt) : todayInputDate())
   const [startTime, setStartTime] = useState(existing ? tsToTime(existing.startedAt) : nowInputTime())
   const [endTime, setEndTime] = useState(existing ? logEndTime(existing) : nowInputTime())
@@ -192,12 +213,34 @@ function FeedModal({ onClose, existing }: { onClose: () => void; existing?: Feed
           </>
         )}
 
-        {/* Amount (bottle / formula only) */}
-        {(type === 'bottle' || type === 'formula') && (
+        {/* Amount (bottle) */}
+        {type === 'bottle' && (
           <div className="mb-3">
             <label className="text-xs text-gray-500 block mb-1">Amount (ml)</label>
             <input type="number" value={amountMl} onChange={e => setAmountMl(e.target.value)}
               placeholder="e.g. 90" className={`${inputCls} text-lg`} />
+          </div>
+        )}
+
+        {/* Amount (formula — steps of 30ml) */}
+        {type === 'formula' && (
+          <div className="mb-3">
+            <label className="text-xs text-gray-500 block mb-1">Amount (ml)</label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setAmountMl(String(Math.max(30, (Number(amountMl) || 60) - 30)))}
+                className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 text-2xl font-bold active:bg-purple-100 transition-colors"
+              >−</button>
+              <p className="flex-1 text-center text-2xl font-bold text-purple-900 tabular-nums">
+                {amountMl || '60'} ml
+              </p>
+              <button
+                type="button"
+                onClick={() => setAmountMl(String((Number(amountMl) || 30) + 30))}
+                className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 text-2xl font-bold active:bg-purple-100 transition-colors"
+              >+</button>
+            </div>
           </div>
         )}
 

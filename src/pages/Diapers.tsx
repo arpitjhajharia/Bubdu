@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Baby, Trash2, Pencil, Plus, X } from 'lucide-react'
 import {
   subscribeDiapers, addDiaper, updateDiaper, deleteDiaper,
@@ -26,13 +27,24 @@ const DIAPER_OPTIONS: { type: DiaperType; emoji: string; label: string; color: s
 ]
 
 export default function Diapers() {
+  const location = useLocation()
   const [logs, setLogs] = useState<DiaperLog[]>([])
   const [showModal, setShowModal] = useState(false)
+  const [quickType, setQuickType] = useState<DiaperType | undefined>(undefined)
   const [editingLog, setEditingLog] = useState<DiaperLog | null>(null)
 
   useEffect(() => {
     return subscribeDiapers(50, setLogs)
   }, [])
+
+  useEffect(() => {
+    const state = location.state as { openModal?: boolean; type?: DiaperType } | null
+    if (state?.openModal) {
+      setQuickType(state.type)
+      setShowModal(true)
+      window.history.replaceState({}, '')
+    }
+  }, [location.state])
 
   const today = new Date().toDateString()
   const todayCount = logs.filter(l => l.changedAt.toDate().toDateString() === today).length
@@ -106,14 +118,14 @@ export default function Diapers() {
         </div>
       ))}
 
-      {showModal && <DiaperModal onClose={() => setShowModal(false)} />}
+      {showModal && <DiaperModal initialType={quickType} onClose={() => { setShowModal(false); setQuickType(undefined) }} />}
       {editingLog && <DiaperModal existing={editingLog} onClose={() => setEditingLog(null)} />}
     </div>
   )
 }
 
-function DiaperModal({ onClose, existing }: { onClose: () => void; existing?: DiaperLog }) {
-  const [selected, setSelected] = useState<DiaperType>(existing?.type ?? 'wet')
+function DiaperModal({ onClose, existing, initialType }: { onClose: () => void; existing?: DiaperLog; initialType?: DiaperType }) {
+  const [selected, setSelected] = useState<DiaperType>(existing?.type ?? initialType ?? 'wet')
   const [notes, setNotes] = useState(existing?.notes ?? '')
   const [date, setDate] = useState(existing ? tsToDate(existing.changedAt) : todayInputDate())
   const [time, setTime] = useState(existing ? tsToTime(existing.changedAt) : nowInputTime())

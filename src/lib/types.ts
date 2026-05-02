@@ -59,3 +59,16 @@ export interface WeightLog {
   recordedAt: Timestamp
   notes?: string
 }
+
+export interface NazarLog {
+  id: string
+  date: string       // 'YYYY-MM-DD' — also used as the Firestore document ID
+  doneAt: Timestamp
+}
+
+export interface IncidentLog {
+  id: string
+  title: string
+  description?: string
+  recordedAt: Timestamp
+}
