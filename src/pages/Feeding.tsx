@@ -229,7 +229,7 @@ function FeedModal({ onClose, existing, initialType }: { onClose: () => void; ex
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => setAmountMl(String(Math.max(30, (Number(amountMl) || 60) - 30)))}
+                onClick={() => setAmountMl(String(Math.max(5, (Number(amountMl) || 60) - 5)))}
                 className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 text-2xl font-bold active:bg-purple-100 transition-colors"
               >−</button>
               <p className="flex-1 text-center text-2xl font-bold text-purple-900 tabular-nums">
@@ -237,7 +237,7 @@ function FeedModal({ onClose, existing, initialType }: { onClose: () => void; ex
               </p>
               <button
                 type="button"
-                onClick={() => setAmountMl(String((Number(amountMl) || 30) + 30))}
+                onClick={() => setAmountMl(String((Number(amountMl) || 55) + 5))}
                 className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 text-2xl font-bold active:bg-purple-100 transition-colors"
               >+</button>
             </div>
