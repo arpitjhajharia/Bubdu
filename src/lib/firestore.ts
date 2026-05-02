@@ -13,7 +13,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { FeedingLog, DiaperLog, Medicine, MedicineLog, WeightLog, NazarLog, IncidentLog, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
+import type { FeedingLog, DiaperLog, Medicine, MedicineLog, WeightLog, NazarLog, MassageLog, IncidentLog, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
 
 // ── Feeding ──────────────────────────────────────────────────────────────────
 
@@ -95,13 +95,13 @@ export async function deleteMedicine(id: string) {
 
 // ── Medicine Logs ─────────────────────────────────────────────────────────────
 
-// Loads all logs from the past 2 days — enough to determine today's dose status
+// Loads logs from the past 30 days to support backdating missed doses
 export function subscribeMedicineLogs(callback: (logs: MedicineLog[]) => void) {
-  const twoDaysAgo = new Date()
-  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const q = query(
     collection(db, 'medicineLogs'),
-    where('givenAt', '>=', Timestamp.fromDate(twoDaysAgo)),
+    where('givenAt', '>=', Timestamp.fromDate(thirtyDaysAgo)),
     orderBy('givenAt', 'desc')
   )
   return onSnapshot(q, snap =>
@@ -109,13 +109,13 @@ export function subscribeMedicineLogs(callback: (logs: MedicineLog[]) => void) {
   )
 }
 
-export async function logMedicine(medicine: Medicine, doseLabel: string) {
+export async function logMedicine(medicine: Medicine, doseLabel: string, givenAt?: Timestamp) {
   await addDoc(collection(db, 'medicineLogs'), {
     medicineId: medicine.id,
     medicineName: medicine.name,
     medicineFor: medicine.for,
     doseLabel,
-    givenAt: Timestamp.now(),
+    givenAt: givenAt ?? Timestamp.now(),
   })
 }
 
@@ -126,11 +126,15 @@ export async function deleteMedicineLog(id: string) {
 // ── Dose status helpers ───────────────────────────────────────────────────────
 
 export function isDoseGivenToday(logs: MedicineLog[], medicineId: string, doseLabel: string): boolean {
-  const today = new Date().toDateString()
+  return isDoseGivenOnDate(logs, medicineId, doseLabel, toYMD(new Date()))
+}
+
+export function isDoseGivenOnDate(logs: MedicineLog[], medicineId: string, doseLabel: string, date: string): boolean {
+  const checkDate = new Date(date + 'T00:00:00').toDateString()
   return logs.some(l =>
     l.medicineId === medicineId &&
     l.doseLabel === doseLabel &&
-    l.givenAt.toDate().toDateString() === today
+    l.givenAt.toDate().toDateString() === checkDate
   )
 }
 
@@ -146,9 +150,13 @@ export function getDoseStatus(
   logs: MedicineLog[],
   medicineId: string,
   doseLabel: string,
-  doseTime: string
+  doseTime: string,
+  date?: string  // 'YYYY-MM-DD'; defaults to today
 ): DoseStatus {
-  if (isDoseGivenToday(logs, medicineId, doseLabel)) return 'given'
+  const selectedDate = date ?? toYMD(new Date())
+  if (isDoseGivenOnDate(logs, medicineId, doseLabel, selectedDate)) return 'given'
+  const today = toYMD(new Date())
+  if (selectedDate < today) return 'overdue'  // past date, not given = missed
   const now = nowTime()
   if (doseTime <= now) return 'overdue'
   // "upcoming" = due in the next 30 min
@@ -185,9 +193,10 @@ export function isCourseStarted(medicine: Medicine): boolean {
   return toYMD(new Date()) >= medicine.startDate
 }
 
-// For weekly: is today the scheduled day of week?
-export function isWeeklyDueToday(medicine: Medicine): boolean {
-  return new Date(medicine.startDate).getDay() === new Date().getDay()
+// For weekly: is the given date (default: today) the scheduled day of week?
+export function isWeeklyDueToday(medicine: Medicine, date?: string): boolean {
+  const checkDate = date ? new Date(date + 'T00:00:00') : new Date()
+  return new Date(medicine.startDate).getDay() === checkDate.getDay()
 }
 
 // Returns { current, total, unit } — e.g. { current: 3, total: 7, unit: 'day' }
@@ -357,6 +366,23 @@ export async function unmarkNazar(date: string) {
   await deleteDoc(doc(db, 'nazarLogs', date))
 }
 
+// ── Massage ───────────────────────────────────────────────────────────────────
+
+export function subscribeMassage(callback: (logs: MassageLog[]) => void) {
+  const q = query(collection(db, 'massageLogs'), orderBy('date', 'desc'))
+  return onSnapshot(q, snap =>
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as MassageLog))
+  )
+}
+
+export async function markMassageDone(date: string) {
+  await setDoc(doc(db, 'massageLogs', date), { date, doneAt: Timestamp.now() })
+}
+
+export async function unmarkMassage(date: string) {
+  await deleteDoc(doc(db, 'massageLogs', date))
+}
+
 // ── Incidents (Reports) ───────────────────────────────────────────────────────
 
 export function subscribeIncidents(callback: (logs: IncidentLog[]) => void) {
@@ -382,4 +408,4 @@ export async function deleteIncident(id: string) {
   await deleteDoc(doc(db, 'incidentLogs', id))
 }
 
-export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, WeightLog, NazarLog, IncidentLog }
+export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, WeightLog, NazarLog, MassageLog, IncidentLog }

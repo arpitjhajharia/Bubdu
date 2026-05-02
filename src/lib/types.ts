@@ -66,6 +66,12 @@ export interface NazarLog {
   doneAt: Timestamp
 }
 
+export interface MassageLog {
+  id: string
+  date: string       // 'YYYY-MM-DD' — also used as the Firestore document ID
+  doneAt: Timestamp
+}
+
 export interface IncidentLog {
   id: string
   title: string

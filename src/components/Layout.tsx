@@ -7,7 +7,7 @@ const nav = [
   { to: '/diapers', icon: Baby, label: 'Diapers' },
   { to: '/medicines', icon: Pill, label: 'Meds' },
   { to: '/weight', icon: Scale, label: 'Weight' },
-  { to: '/nazar', icon: Eye, label: 'Nazar' },
+  { to: '/nazar', icon: Eye, label: 'Daily' },
   { to: '/reports', icon: ClipboardList, label: 'Reports' },
 ]
 

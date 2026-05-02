@@ -8,7 +8,10 @@ import {
   isCourseComplete, isCourseStarted, isWeeklyDueToday,
   getCourseProgress, nextWeeklyDueLabel, getEndDate,
   formatDoseTime, formatShortDate, formatTime, formatDate, timeAgo,
+  makeTimestamp, todayInputDate,
 } from '@/lib/firestore'
+import type { DoseStatus } from '@/lib/firestore'
+import type { Timestamp } from 'firebase/firestore'
 import type { Medicine, MedicineLog, MedicineFor, DoseTime, RepeatSchedule } from '@/lib/types'
 
 const DOSE_PRESETS: DoseTime[] = [
@@ -17,10 +20,7 @@ const DOSE_PRESETS: DoseTime[] = [
   { label: 'Night',     time: '21:00' },
 ]
 
-function todayYMD(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+const DAY_SHORT = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
 export default function Medicines() {
   const [medicines, setMedicines] = useState<Medicine[]>([])
@@ -28,6 +28,8 @@ export default function Medicines() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null)
   const [tab, setTab] = useState<MedicineFor>('baby')
+  const [view, setView] = useState<'medicine' | 'time'>('time')
+  const [selectedDate, setSelectedDate] = useState(() => todayInputDate())
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export default function Medicines() {
         </button>
       </div>
 
-      <div className="flex gap-2 mb-3">
+      <div className="flex gap-2 mb-2.5">
         {(['baby', 'mother'] as MedicineFor[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${
@@ -66,63 +68,132 @@ export default function Medicines() {
         ))}
       </div>
 
-      {filtered.length === 0 && (
-        <div className="text-center py-10 text-gray-400">
-          <Pill size={36} className="mx-auto mb-2.5 opacity-30" />
-          <p>No medicines for {tab === 'baby' ? 'Bubdu' : 'mother'}</p>
-          <p className="text-xs mt-1">Tap + to add one</p>
-        </div>
-      )}
-
-      <div className="space-y-2.5 mb-4">
-        {active.map(med => (
-          <MedicineCard key={med.id} medicine={med} logs={logs}
-            onGive={label => logMedicine(med, label)}
-            onDelete={() => deleteMedicine(med.id)}
-            onEdit={() => setEditingMedicine(med)}
-            onToggle={() => updateMedicine(med.id, { active: !med.active })} />
+      <div className="flex gap-1 mb-3 bg-gray-100 rounded-xl p-1">
+        {(['time', 'medicine'] as const).map(v => (
+          <button key={v} onClick={() => setView(v)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              view === v ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500'
+            }`}>
+            {v === 'time' ? '🕐 Time' : '💊 Medicine'}
+          </button>
         ))}
       </div>
 
-      {completed.length > 0 && (
+      {/* Date scroller — last 14 days */}
+      {(() => {
+        const today = todayInputDate()
+        const days = Array.from({ length: 14 }, (_, i) => {
+          const d = new Date()
+          d.setDate(d.getDate() - (13 - i))
+          const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          return { ymd, dayLabel: DAY_SHORT[d.getDay()], date: d.getDate(), isToday: ymd === today }
+        })
+        return (
+          <div className="mb-3">
+            <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
+              {days.map(({ ymd, dayLabel, date, isToday }) => (
+                <button
+                  key={ymd}
+                  onClick={() => setSelectedDate(ymd)}
+                  className={`flex-shrink-0 flex flex-col items-center px-2 py-1.5 rounded-xl transition-colors min-w-[40px] ${
+                    ymd === selectedDate
+                      ? 'bg-purple-600 text-white'
+                      : isToday
+                      ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                      : 'bg-white text-gray-600'
+                  }`}
+                >
+                  <span className="text-[10px] font-medium leading-none mb-0.5">{dayLabel}</span>
+                  <span className="text-sm font-bold leading-none">{date}</span>
+                  {isToday && ymd !== selectedDate && (
+                    <span className="w-1 h-1 rounded-full bg-purple-400 mt-0.5" />
+                  )}
+                </button>
+              ))}
+            </div>
+            {selectedDate !== today && (
+              <p className="text-xs text-orange-500 mt-1.5 text-center font-medium">
+                Showing {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}
+                {' · '}
+                <button onClick={() => setSelectedDate(today)} className="underline">Back to today</button>
+              </p>
+            )}
+          </div>
+        )
+      })()}
+
+      {view === 'time' && (
+        <TimeView
+          medicines={active}
+          logs={logs}
+          selectedDate={selectedDate}
+          onGive={(med, label, givenAt) => logMedicine(med, label, givenAt)}
+        />
+      )}
+
+      {view === 'medicine' && (
         <>
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Completed / Paused</h2>
-          <div className="space-y-2 mb-4 opacity-60">
-            {completed.map(med => (
+          {filtered.length === 0 && (
+            <div className="text-center py-10 text-gray-400">
+              <Pill size={36} className="mx-auto mb-2.5 opacity-30" />
+              <p>No medicines for {tab === 'baby' ? 'Bubdu' : 'mother'}</p>
+              <p className="text-xs mt-1">Tap + to add one</p>
+            </div>
+          )}
+
+          <div className="space-y-2.5 mb-4">
+            {active.map(med => (
               <MedicineCard key={med.id} medicine={med} logs={logs}
-                onGive={label => logMedicine(med, label)}
+                selectedDate={selectedDate}
+                onGive={(label, givenAt) => logMedicine(med, label, givenAt)}
                 onDelete={() => deleteMedicine(med.id)}
                 onEdit={() => setEditingMedicine(med)}
                 onToggle={() => updateMedicine(med.id, { active: !med.active })} />
             ))}
           </div>
+
+          {completed.length > 0 && (
+            <>
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Completed / Paused</h2>
+              <div className="space-y-2 mb-4 opacity-60">
+                {completed.map(med => (
+                  <MedicineCard key={med.id} medicine={med} logs={logs}
+                    selectedDate={selectedDate}
+                    onGive={(label, givenAt) => logMedicine(med, label, givenAt)}
+                    onDelete={() => deleteMedicine(med.id)}
+                    onEdit={() => setEditingMedicine(med)}
+                    onToggle={() => updateMedicine(med.id, { active: !med.active })} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {(() => {
+            const historyLogs = logs.filter(l => medicines.find(m => m.id === l.medicineId)?.for === tab).slice(0, 20)
+            if (historyLogs.length === 0) return null
+            return (
+              <>
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">History</h2>
+                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                  {historyLogs.map((log, i) => (
+                    <div key={log.id} className={`flex items-center px-3 py-2.5 gap-2.5 ${i < historyLogs.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                      <Check size={13} className="text-green-500 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{log.medicineName}</p>
+                        <p className="text-xs text-gray-400">{log.doseLabel} · {formatDate(log.givenAt)} {formatTime(log.givenAt)}</p>
+                      </div>
+                      <p className="text-xs text-gray-400 shrink-0">{timeAgo(log.givenAt)}</p>
+                      <button onClick={() => deleteMedicineLog(log.id)} className="text-gray-300 active:text-red-500 ml-1">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )
+          })()}
         </>
       )}
-
-      {(() => {
-        const historyLogs = logs.filter(l => medicines.find(m => m.id === l.medicineId)?.for === tab).slice(0, 20)
-        if (historyLogs.length === 0) return null
-        return (
-          <>
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">History</h2>
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              {historyLogs.map((log, i) => (
-                <div key={log.id} className={`flex items-center px-3 py-2.5 gap-2.5 ${i < historyLogs.length - 1 ? 'border-b border-gray-50' : ''}`}>
-                  <Check size={13} className="text-green-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{log.medicineName}</p>
-                    <p className="text-xs text-gray-400">{log.doseLabel} · {formatDate(log.givenAt)} {formatTime(log.givenAt)}</p>
-                  </div>
-                  <p className="text-xs text-gray-400 shrink-0">{timeAgo(log.givenAt)}</p>
-                  <button onClick={() => deleteMedicineLog(log.id)} className="text-gray-300 active:text-red-500 ml-1">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </>
-        )
-      })()}
 
       {showAddModal && (
         <MedicineFormModal defaultFor={tab} onClose={() => setShowAddModal(false)}
@@ -143,10 +214,120 @@ export default function Medicines() {
   )
 }
 
-function MedicineCard({ medicine, logs, onGive, onDelete, onEdit, onToggle }: {
+type FlatDose = { medicine: Medicine; dose: DoseTime }
+
+const TIME_BUCKETS = [
+  { label: 'Morning',   emoji: '🌅', from: '00:00', to: '11:59' },
+  { label: 'Afternoon', emoji: '☀️', from: '12:00', to: '17:59' },
+  { label: 'Evening',   emoji: '🌙', from: '18:00', to: '23:59' },
+]
+
+function TimeView({ medicines, logs, selectedDate, onGive }: {
+  medicines: Medicine[]
+  logs: MedicineLog[]
+  selectedDate: string
+  onGive: (medicine: Medicine, label: string, givenAt?: Timestamp) => Promise<void>
+}) {
+  const eligible = medicines.filter(m =>
+    isCourseStarted(m) && !isCourseComplete(m) &&
+    (m.repeatSchedule !== 'weekly' || isWeeklyDueToday(m, selectedDate))
+  )
+
+  const allDoses: FlatDose[] = eligible
+    .flatMap(m => m.doseTimes.map(d => ({ medicine: m, dose: d })))
+    .sort((a, b) => a.dose.time.localeCompare(b.dose.time))
+
+  if (eligible.length === 0) {
+    return (
+      <div className="text-center py-10 text-gray-400">
+        <Clock size={36} className="mx-auto mb-2.5 opacity-30" />
+        <p>No active medicines due on this day</p>
+      </div>
+    )
+  }
+
+  const buckets = TIME_BUCKETS.map(b => ({
+    ...b,
+    doses: allDoses.filter(d => d.dose.time >= b.from && d.dose.time <= b.to),
+  })).filter(b => b.doses.length > 0)
+
+  const today = todayInputDate()
+
+  return (
+    <div className="space-y-3 mb-4">
+      {buckets.map(bucket => (
+        <div key={bucket.label}>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+            {bucket.emoji} {bucket.label}
+          </p>
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            {bucket.doses.map(({ medicine, dose }, i) => (
+              <TimeDoseRow
+                key={`${medicine.id}-${dose.label}`}
+                medicine={medicine}
+                dose={dose}
+                status={getDoseStatus(logs, medicine.id, dose.label, dose.time, selectedDate)}
+                isLast={i === bucket.doses.length - 1}
+                onGive={() => {
+                  const givenAt = selectedDate !== today ? makeTimestamp(selectedDate, dose.time) : undefined
+                  return onGive(medicine, dose.label, givenAt)
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function TimeDoseRow({ medicine, dose, status, isLast, onGive }: {
+  medicine: Medicine
+  dose: DoseTime
+  status: DoseStatus
+  isLast: boolean
+  onGive: () => Promise<void>
+}) {
+  const [giving, setGiving] = useState(false)
+
+  async function handle() {
+    setGiving(true)
+    await onGive()
+    setGiving(false)
+  }
+
+  const s = {
+    given:    { row: 'bg-green-50',  badge: 'bg-green-100 text-green-700',   icon: <Check size={13} className="text-green-600" /> },
+    upcoming: { row: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', icon: <Clock size={13} className="text-orange-500" /> },
+    overdue:  { row: 'bg-red-50',    badge: 'bg-red-100 text-red-700',       icon: <AlertCircle size={13} className="text-red-500" /> },
+    later:    { row: '',             badge: 'bg-gray-100 text-gray-500',      icon: <Clock size={13} className="text-gray-400" /> },
+  }[status]
+
+  return (
+    <div className={`flex items-center gap-2.5 px-3 py-2.5 ${!isLast ? 'border-b border-gray-50' : ''} ${s.row}`}>
+      {s.icon}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-800 truncate">{medicine.name}</p>
+        <p className="text-xs text-gray-500">{medicine.dosage} {medicine.unit} · {formatDoseTime(dose.time)}</p>
+      </div>
+      <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${s.badge}`}>
+        {status === 'given' ? 'Given ✓' : status === 'overdue' ? 'Overdue' : status === 'upcoming' ? 'Due soon' : 'Later'}
+      </span>
+      {status !== 'given' && (
+        <button onClick={handle} disabled={giving}
+          className="ml-1 bg-purple-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-medium disabled:opacity-50 active:scale-95 transition-transform shrink-0">
+          {giving ? '✓' : 'Give'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function MedicineCard({ medicine, logs, selectedDate, onGive, onDelete, onEdit, onToggle }: {
   medicine: Medicine
   logs: MedicineLog[]
-  onGive: (doseLabel: string) => Promise<void>
+  selectedDate: string
+  onGive: (doseLabel: string, givenAt?: Timestamp) => Promise<void>
   onDelete: () => void
   onEdit: () => void
   onToggle: () => void
@@ -156,8 +337,9 @@ function MedicineCard({ medicine, logs, onGive, onDelete, onEdit, onToggle }: {
   const overdue = hasMedicineOverdue(logs, medicine)
   const progress = medicine.repetitions ? getCourseProgress(medicine) : null
   const endDate = getEndDate(medicine)
-  const weeklyDueToday = medicine.repeatSchedule === 'weekly' ? isWeeklyDueToday(medicine) : true
+  const weeklyDueToday = medicine.repeatSchedule === 'weekly' ? isWeeklyDueToday(medicine, selectedDate) : true
   const sorted = [...medicine.doseTimes].sort((a, b) => a.time.localeCompare(b.time))
+  const today = todayInputDate()
 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border-l-4 overflow-hidden ${
@@ -224,15 +406,18 @@ function MedicineCard({ medicine, logs, onGive, onDelete, onEdit, onToggle }: {
             <div className="border-t border-gray-50 divide-y divide-gray-50">
               {sorted.map(dose => (
                 <DoseRow key={dose.label} dose={dose}
-                  status={getDoseStatus(logs, medicine.id, dose.label, dose.time)}
-                  onGive={() => onGive(dose.label)} />
+                  status={getDoseStatus(logs, medicine.id, dose.label, dose.time, selectedDate)}
+                  onGive={() => {
+                    const givenAt = selectedDate !== today ? makeTimestamp(selectedDate, dose.time) : undefined
+                    return onGive(dose.label, givenAt)
+                  }} />
               ))}
             </div>
           )
           : (
             <div className="border-t border-gray-50 px-3 py-2 flex items-center gap-2 text-gray-500 text-xs">
               <Clock size={14} className="text-purple-400" />
-              Not due today · Next: {nextWeeklyDueLabel(medicine)}
+              Not due on this day · Next: {nextWeeklyDueLabel(medicine)}
             </div>
           )
       )}
@@ -309,7 +494,7 @@ function MedicineFormModal({ defaultFor, existing, onClose, onSave }: {
   const [notes, setNotes] = useState(existing?.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [doseTimes, setDoseTimes] = useState<DoseTime[]>(existing?.doseTimes ?? [{ label: 'Morning', time: '08:00' }])
-  const [startDate, setStartDate] = useState(existing?.startDate ?? todayYMD())
+  const [startDate, setStartDate] = useState(existing?.startDate ?? todayInputDate())
   const [repeatSchedule, setRepeatSchedule] = useState<RepeatSchedule>(existing?.repeatSchedule ?? 'daily')
   const [repetitions, setRepetitions] = useState(existing?.repetitions ? String(existing.repetitions) : '7')
   const [ongoing, setOngoing] = useState(existing ? existing.repetitions === 0 : false)
