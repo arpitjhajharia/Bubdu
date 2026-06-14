@@ -69,11 +69,15 @@ export type WeightLog = GrowthLog
 
 export type BabySex = 'boy' | 'girl'
 
+// How the baby's age is displayed: total days, weeks+days, or months+days.
+export type AgeFormat = 'days' | 'weeksDays' | 'monthsDays'
+
 export interface BabyProfile {
   name: string
   sex: BabySex
   birthDate: string  // 'YYYY-MM-DD'
   birthTime?: string // 'HH:MM' (24h)
+  ageFormat?: AgeFormat // display preference; defaults to 'monthsDays'
 }
 
 export interface NazarLog {

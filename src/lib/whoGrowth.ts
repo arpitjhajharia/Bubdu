@@ -20,7 +20,28 @@ export interface LMS {
   S: number
 }
 
-export const WFA_BOYS: LMS[] = [
+const AVG_MONTH_DAYS = 30.4375
+const WEEK_MONTHS = 7 / AVG_MONTH_DAYS // a week expressed in average months
+
+// Weight-for-age BOYS, weekly 0–13 weeks. Source: wfa_boys_0-to-13-weeks.
+const WFA_BOYS_WEEKLY: { w: number; L: number; M: number; S: number }[] = [
+  { w: 0, L: 0.3487, M: 3.3464, S: 0.14602 },
+  { w: 1, L: 0.2776, M: 3.4879, S: 0.14483 },
+  { w: 2, L: 0.2581, M: 3.7529, S: 0.14142 },
+  { w: 3, L: 0.2442, M: 4.0603, S: 0.13807 },
+  { w: 4, L: 0.2331, M: 4.3671, S: 0.13497 },
+  { w: 5, L: 0.2237, M: 4.659, S: 0.13215 },
+  { w: 6, L: 0.2155, M: 4.9303, S: 0.1296 },
+  { w: 7, L: 0.2081, M: 5.1817, S: 0.12729 },
+  { w: 8, L: 0.2014, M: 5.4149, S: 0.1252 },
+  { w: 9, L: 0.1952, M: 5.6319, S: 0.1233 },
+  { w: 10, L: 0.1894, M: 5.8346, S: 0.12157 },
+  { w: 11, L: 0.184, M: 6.0242, S: 0.12001 },
+  { w: 12, L: 0.1789, M: 6.2019, S: 0.1186 },
+  { w: 13, L: 0.174, M: 6.369, S: 0.11732 },
+]
+
+const WFA_BOYS_MONTHLY: LMS[] = [
   { m: 0, L: 0.3487, M: 3.3464, S: 0.14602 },
   { m: 1, L: 0.2297, M: 4.4709, S: 0.13395 },
   { m: 2, L: 0.197, M: 5.5675, S: 0.12385 },
@@ -48,7 +69,33 @@ export const WFA_BOYS: LMS[] = [
   { m: 24, L: -0.0137, M: 12.1515, S: 0.11426 },
 ]
 
-export const LHFA_BOYS: LMS[] = [
+// Merged weight curve: weekly points (0–13 wk) then monthly from month 4.
+export const WFA_BOYS: LMS[] = [
+  ...WFA_BOYS_WEEKLY.map(r => ({ m: +(r.w * WEEK_MONTHS).toFixed(4), L: r.L, M: r.M, S: r.S })),
+  ...WFA_BOYS_MONTHLY.filter(r => r.m >= 4),
+]
+
+// Length-for-age BOYS, weekly 0–13 weeks (finer resolution for newborns).
+// Source: lhfa_boys_0-to-13-weeks_zscores.xlsx. These replace the coarse
+// monthly months 0–3 below; from month 4 onward the monthly table is used.
+const LHFA_BOYS_WEEKLY: { w: number; L: number; M: number; S: number }[] = [
+  { w: 0, L: 1, M: 49.8842, S: 0.03795 },
+  { w: 1, L: 1, M: 51.1152, S: 0.03723 },
+  { w: 2, L: 1, M: 52.3461, S: 0.03652 },
+  { w: 3, L: 1, M: 53.3905, S: 0.03609 },
+  { w: 4, L: 1, M: 54.3881, S: 0.0357 },
+  { w: 5, L: 1, M: 55.3374, S: 0.03534 },
+  { w: 6, L: 1, M: 56.2357, S: 0.03501 },
+  { w: 7, L: 1, M: 57.0851, S: 0.0347 },
+  { w: 8, L: 1, M: 57.8889, S: 0.03442 },
+  { w: 9, L: 1, M: 58.6536, S: 0.03416 },
+  { w: 10, L: 1, M: 59.3872, S: 0.03392 },
+  { w: 11, L: 1, M: 60.0894, S: 0.03369 },
+  { w: 12, L: 1, M: 60.7605, S: 0.03348 },
+  { w: 13, L: 1, M: 61.4013, S: 0.03329 },
+]
+
+const LHFA_BOYS_MONTHLY: LMS[] = [
   { m: 0, L: 1, M: 49.8842, S: 0.03795 },
   { m: 1, L: 1, M: 54.7244, S: 0.03557 },
   { m: 2, L: 1, M: 58.4249, S: 0.03424 },
@@ -76,6 +123,13 @@ export const LHFA_BOYS: LMS[] = [
   { m: 24, L: 1, M: 87.8161, S: 0.03479 },
 ]
 
+// Merged length curve: weekly points (0–13 wk ≈ 0–3 mo) for newborn precision,
+// then monthly points from month 4 onward. Keyed by age in (fractional) months.
+export const LHFA_BOYS: LMS[] = [
+  ...LHFA_BOYS_WEEKLY.map(r => ({ m: +(r.w * WEEK_MONTHS).toFixed(4), L: r.L, M: r.M, S: r.S })),
+  ...LHFA_BOYS_MONTHLY.filter(r => r.m >= 4),
+]
+
 export type GrowthMetric = 'weight' | 'length'
 
 export const MAX_AGE_MONTHS = 24
@@ -88,8 +142,6 @@ export const PERCENTILE_LINES = [
   { label: '85', z: 1.03643 },
   { label: '97', z: 1.88079 },
 ]
-
-const AVG_MONTH_DAYS = 30.4375
 
 export function ageInMonths(birthDateMs: number, atMs: number): number {
   return (atMs - birthDateMs) / (AVG_MONTH_DAYS * 86400000)

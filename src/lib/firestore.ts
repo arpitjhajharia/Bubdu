@@ -13,7 +13,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { FeedingLog, DiaperLog, Medicine, MedicineLog, GrowthLog, WeightLog, BabyProfile, NazarLog, MassageLog, IncidentLog, FeedIntervalSettings, FeedIntervalRule, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
+import type { FeedingLog, DiaperLog, Medicine, MedicineLog, GrowthLog, WeightLog, BabyProfile, BabySex, AgeFormat, NazarLog, MassageLog, IncidentLog, FeedIntervalSettings, FeedIntervalRule, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
 
 // ── Feeding ──────────────────────────────────────────────────────────────────
 
@@ -401,6 +401,7 @@ export const DEFAULT_BABY_PROFILE: BabyProfile = {
   sex: 'boy',
   birthDate: '2026-04-26',
   birthTime: '08:25',
+  ageFormat: 'monthsDays',
 }
 
 export function subscribeBabyProfile(callback: (p: BabyProfile) => void) {
@@ -420,18 +421,38 @@ export function birthMs(p: BabyProfile): number {
   return new Date(y, mo - 1, d, h, mi).getTime()
 }
 
-// Human-readable age, e.g. "1 month 3 weeks" or "12 days".
+function plural(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? '' : 's'}`
+}
+
+// Human-readable age in the profile's chosen format: total days, weeks+days,
+// or calendar months+days.
 export function ageLabel(p: BabyProfile, atMs: number = Date.now()): string {
-  const days = Math.max(0, Math.floor((atMs - birthMs(p)) / 86400000))
-  if (days < 14) return `${days} day${days === 1 ? '' : 's'}`
-  if (days < 60) {
+  const birth = birthMs(p)
+  const days = Math.max(0, Math.floor((atMs - birth) / 86400000))
+  const fmt = p.ageFormat ?? 'monthsDays'
+
+  if (fmt === 'days') return plural(days, 'day')
+
+  if (fmt === 'weeksDays') {
     const w = Math.floor(days / 7)
-    return `${w} week${w === 1 ? '' : 's'}`
+    const d = days % 7
+    if (w === 0) return plural(d, 'day')
+    return d > 0 ? `${plural(w, 'week')} ${plural(d, 'day')}` : plural(w, 'week')
   }
-  const months = Math.floor(days / 30.4375)
-  const remDays = days - Math.floor(months * 30.4375)
-  const weeks = Math.floor(remDays / 7)
-  return `${months} month${months === 1 ? '' : 's'}${weeks > 0 ? ` ${weeks} week${weeks === 1 ? '' : 's'}` : ''}`
+
+  // monthsDays — calendar-accurate (whole months elapsed, then leftover days)
+  const b = new Date(birth)
+  const now = new Date(atMs)
+  let months = (now.getFullYear() - b.getFullYear()) * 12 + (now.getMonth() - b.getMonth())
+  let dayDiff = now.getDate() - b.getDate()
+  if (dayDiff < 0) {
+    months--
+    dayDiff += new Date(now.getFullYear(), now.getMonth(), 0).getDate() // days in previous month
+  }
+  if (months < 0) months = 0
+  if (months === 0) return plural(dayDiff, 'day')
+  return dayDiff > 0 ? `${plural(months, 'month')} ${plural(dayDiff, 'day')}` : plural(months, 'month')
 }
 
 // ── Nazar ─────────────────────────────────────────────────────────────────────
@@ -493,4 +514,4 @@ export async function deleteIncident(id: string) {
   await deleteDoc(doc(db, 'incidentLogs', id))
 }
 
-export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, GrowthLog, WeightLog, BabyProfile, NazarLog, MassageLog, IncidentLog, FeedIntervalSettings, FeedIntervalRule }
+export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, GrowthLog, WeightLog, BabyProfile, BabySex, AgeFormat, NazarLog, MassageLog, IncidentLog, FeedIntervalSettings, FeedIntervalRule }

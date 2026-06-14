@@ -5,7 +5,7 @@ import {
   subscribeBabyProfile, saveBabyProfile, DEFAULT_BABY_PROFILE, birthMs, ageLabel,
   formatTime, formatDate, makeTimestamp, todayInputDate, nowInputTime,
 } from '@/lib/firestore'
-import type { GrowthLog, BabyProfile } from '@/lib/types'
+import type { GrowthLog, BabyProfile, AgeFormat } from '@/lib/types'
 import {
   ageInMonths, evaluate, percentileCurves, percentileLabel,
   MAX_AGE_MONTHS, type GrowthMetric,
@@ -339,13 +339,20 @@ function ProfileModal({ existing, onClose }: { existing: BabyProfile; onClose: (
   const [sex, setSex] = useState(existing.sex)
   const [birthDate, setBirthDate] = useState(existing.birthDate)
   const [birthTime, setBirthTime] = useState(existing.birthTime ?? '')
+  const [ageFormat, setAgeFormat] = useState<AgeFormat>(existing.ageFormat ?? 'monthsDays')
   const [saving, setSaving] = useState(false)
   const inputCls = 'w-full border border-purple-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-purple-500'
+
+  const ageFormats: { key: AgeFormat; label: string }[] = [
+    { key: 'days', label: 'Days' },
+    { key: 'weeksDays', label: 'Weeks + Days' },
+    { key: 'monthsDays', label: 'Months + Days' },
+  ]
 
   async function handleSave() {
     if (!name || !birthDate) return
     setSaving(true)
-    await saveBabyProfile({ name, sex, birthDate, ...(birthTime ? { birthTime } : {}) })
+    await saveBabyProfile({ name, sex, birthDate, ageFormat, ...(birthTime ? { birthTime } : {}) })
     onClose()
   }
 
@@ -381,6 +388,19 @@ function ProfileModal({ existing, onClose }: { existing: BabyProfile; onClose: (
             <input type="time" value={birthTime} onChange={e => setBirthTime(e.target.value)} className={inputCls} />
           </div>
         </div>
+
+        <label className="text-xs text-gray-500 block mb-1">Show age as</label>
+        <div className="grid grid-cols-3 gap-2 mb-2">
+          {ageFormats.map(f => (
+            <button key={f.key} onClick={() => setAgeFormat(f.key)}
+              className={`py-2 rounded-xl text-xs font-medium border ${ageFormat === f.key ? 'bg-purple-600 text-white border-purple-600' : 'border-purple-200 text-purple-500'}`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        {birthDate && (
+          <p className="text-[11px] text-purple-400 mb-4">Preview: {ageLabel({ name, sex, birthDate, ageFormat, ...(birthTime ? { birthTime } : {}) })} old</p>
+        )}
 
         <button onClick={handleSave} disabled={saving || !name || !birthDate}
           className="w-full bg-purple-600 text-white py-2.5 rounded-xl font-semibold disabled:opacity-50">
