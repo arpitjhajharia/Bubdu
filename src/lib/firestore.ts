@@ -13,12 +13,15 @@ import {
   where,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { FeedingLog, DiaperLog, Medicine, MedicineLog, WeightLog, NazarLog, MassageLog, IncidentLog, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
+import type { FeedingLog, DiaperLog, Medicine, MedicineLog, GrowthLog, WeightLog, BabyProfile, NazarLog, MassageLog, IncidentLog, FeedIntervalSettings, FeedIntervalRule, FeedType, BreastSide, DiaperType, MedicineFor } from './types'
 
 // ── Feeding ──────────────────────────────────────────────────────────────────
 
-export function subscribeFeedings(count: number, callback: (logs: FeedingLog[]) => void) {
-  const q = query(collection(db, 'feedingLogs'), orderBy('startedAt', 'desc'), limit(count))
+export function subscribeFeedings(count: number | null, callback: (logs: FeedingLog[]) => void) {
+  const constraints = count != null
+    ? [orderBy('startedAt', 'desc'), limit(count)]
+    : [orderBy('startedAt', 'desc')]
+  const q = query(collection(db, 'feedingLogs'), ...constraints)
   return onSnapshot(q, snap =>
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as FeedingLog))
   )
@@ -280,30 +283,52 @@ export function nextDueTime(lastTs: Timestamp, frequencyHours: number): string {
   return `in ${hrs}h ${mins % 60}m`
 }
 
-// Returns hours until next feed based on type and amount
-export function feedIntervalHours(log: FeedingLog): number {
-  if (log.type !== 'formula') return 2.5
-  const ml = log.amountMl ?? 0
-  if (ml < 41) return 2
-  if (ml < 51) return 2.5
-  return 3
+export const DEFAULT_FEED_SETTINGS: FeedIntervalSettings = {
+  breastHours: 2.5,
+  bottleHours: 2.5,
+  formulaRules: [
+    { upToMl: 40, hours: 2 },
+    { upToMl: 50, hours: 2.5 },
+    { upToMl: null, hours: 3 },
+  ],
 }
 
-export function feedIntervalLabel(log: FeedingLog): string {
-  const h = feedIntervalHours(log)
-  return h === 2 ? '2h' : h === 2.5 ? '2.5h' : '3h'
+export function subscribeFeedSettings(callback: (s: FeedIntervalSettings) => void) {
+  return onSnapshot(doc(db, 'settings', 'feedIntervals'), snap => {
+    callback(snap.exists() ? (snap.data() as FeedIntervalSettings) : DEFAULT_FEED_SETTINGS)
+  })
+}
+
+export async function saveFeedSettings(s: FeedIntervalSettings) {
+  await setDoc(doc(db, 'settings', 'feedIntervals'), s)
+}
+
+// Returns hours until next feed based on type and amount
+export function feedIntervalHours(log: FeedingLog, settings: FeedIntervalSettings = DEFAULT_FEED_SETTINGS): number {
+  if (log.type === 'breast') return settings.breastHours
+  if (log.type === 'bottle') return settings.bottleHours
+  const ml = log.amountMl ?? 0
+  for (const rule of settings.formulaRules) {
+    if (rule.upToMl === null || ml <= rule.upToMl) return rule.hours
+  }
+  return settings.formulaRules[settings.formulaRules.length - 1]?.hours ?? 3
+}
+
+export function feedIntervalLabel(log: FeedingLog, settings: FeedIntervalSettings = DEFAULT_FEED_SETTINGS): string {
+  const h = feedIntervalHours(log, settings)
+  return Number.isInteger(h) ? `${h}h` : `${h}h`
 }
 
 // Returns the Date when the next feed is due
-export function nextFeedDue(log: FeedingLog): Date {
+export function nextFeedDue(log: FeedingLog, settings: FeedIntervalSettings = DEFAULT_FEED_SETTINGS): Date {
   const startMs = log.startedAt.toDate().getTime()
   const durationMs = (log.durationMin ?? 0) * 60000
-  return new Date(startMs + durationMs + feedIntervalHours(log) * 3600000)
+  return new Date(startMs + durationMs + feedIntervalHours(log, settings) * 3600000)
 }
 
 // Returns { label, overdue, urgent } for display
-export function feedCountdownLabel(log: FeedingLog): { label: string; overdue: boolean; urgent: boolean } {
-  const diffMs = nextFeedDue(log).getTime() - Date.now()
+export function feedCountdownLabel(log: FeedingLog, settings: FeedIntervalSettings = DEFAULT_FEED_SETTINGS): { label: string; overdue: boolean; urgent: boolean } {
+  const diffMs = nextFeedDue(log, settings).getTime() - Date.now()
   if (diffMs <= 0) {
     const overdueMins = Math.floor(-diffMs / 60000)
     const h = Math.floor(overdueMins / 60)
@@ -337,29 +362,76 @@ export function nowInputTime(): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-// ── Weight ────────────────────────────────────────────────────────────────────
+// ── Growth (weight + length) ───────────────────────────────────────────────────
+// Stored in the `weightLogs` collection (name kept for data continuity); each
+// doc may carry weightKg and/or lengthCm.
 
-export function subscribeWeights(callback: (logs: WeightLog[]) => void) {
+export function subscribeGrowth(callback: (logs: GrowthLog[]) => void) {
   const q = query(collection(db, 'weightLogs'), orderBy('recordedAt', 'desc'))
   return onSnapshot(q, snap =>
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as WeightLog))
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as GrowthLog))
   )
 }
 
-export async function addWeight(weightKg: number, notes?: string, recordedAt?: Timestamp) {
+export async function addGrowth(data: { weightKg?: number; lengthCm?: number; notes?: string; recordedAt?: Timestamp }) {
   await addDoc(collection(db, 'weightLogs'), {
-    weightKg,
-    recordedAt: recordedAt ?? Timestamp.now(),
-    ...(notes ? { notes } : {}),
+    recordedAt: data.recordedAt ?? Timestamp.now(),
+    ...(data.weightKg != null ? { weightKg: data.weightKg } : {}),
+    ...(data.lengthCm != null ? { lengthCm: data.lengthCm } : {}),
+    ...(data.notes ? { notes: data.notes } : {}),
   })
 }
 
-export async function updateWeight(id: string, data: Partial<WeightLog>) {
+export async function updateGrowth(id: string, data: Partial<GrowthLog>) {
   await updateDoc(doc(db, 'weightLogs', id), data)
 }
 
-export async function deleteWeight(id: string) {
+export async function deleteGrowth(id: string) {
   await deleteDoc(doc(db, 'weightLogs', id))
+}
+
+// Backward-compatible aliases (older imports)
+export const subscribeWeights = subscribeGrowth
+export const deleteWeight = deleteGrowth
+
+// ── Baby profile ────────────────────────────────────────────────────────────────
+
+export const DEFAULT_BABY_PROFILE: BabyProfile = {
+  name: 'Bubdu',
+  sex: 'boy',
+  birthDate: '2026-04-26',
+  birthTime: '08:25',
+}
+
+export function subscribeBabyProfile(callback: (p: BabyProfile) => void) {
+  return onSnapshot(doc(db, 'settings', 'babyProfile'), snap => {
+    callback(snap.exists() ? { ...DEFAULT_BABY_PROFILE, ...(snap.data() as Partial<BabyProfile>) } : DEFAULT_BABY_PROFILE)
+  })
+}
+
+export async function saveBabyProfile(p: BabyProfile) {
+  await setDoc(doc(db, 'settings', 'babyProfile'), p)
+}
+
+// Birth instant (ms) from a profile, combining birthDate + optional birthTime.
+export function birthMs(p: BabyProfile): number {
+  const [y, mo, d] = p.birthDate.split('-').map(Number)
+  const [h, mi] = (p.birthTime ?? '00:00').split(':').map(Number)
+  return new Date(y, mo - 1, d, h, mi).getTime()
+}
+
+// Human-readable age, e.g. "1 month 3 weeks" or "12 days".
+export function ageLabel(p: BabyProfile, atMs: number = Date.now()): string {
+  const days = Math.max(0, Math.floor((atMs - birthMs(p)) / 86400000))
+  if (days < 14) return `${days} day${days === 1 ? '' : 's'}`
+  if (days < 60) {
+    const w = Math.floor(days / 7)
+    return `${w} week${w === 1 ? '' : 's'}`
+  }
+  const months = Math.floor(days / 30.4375)
+  const remDays = days - Math.floor(months * 30.4375)
+  const weeks = Math.floor(remDays / 7)
+  return `${months} month${months === 1 ? '' : 's'}${weeks > 0 ? ` ${weeks} week${weeks === 1 ? '' : 's'}` : ''}`
 }
 
 // ── Nazar ─────────────────────────────────────────────────────────────────────
@@ -421,4 +493,4 @@ export async function deleteIncident(id: string) {
   await deleteDoc(doc(db, 'incidentLogs', id))
 }
 
-export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, WeightLog, NazarLog, MassageLog, IncidentLog }
+export type { FeedingLog, DiaperLog, Medicine, MedicineLog, MedicineFor, GrowthLog, WeightLog, BabyProfile, NazarLog, MassageLog, IncidentLog, FeedIntervalSettings, FeedIntervalRule }

@@ -1,12 +1,12 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Milk, Baby, Pill, Scale, Eye, ClipboardList } from 'lucide-react'
+import { LayoutDashboard, Milk, Baby, Pill, TrendingUp, Eye, ClipboardList } from 'lucide-react'
 
 const nav = [
   { to: '/', icon: LayoutDashboard, label: 'Home' },
   { to: '/feeding', icon: Milk, label: 'Feeding' },
   { to: '/diapers', icon: Baby, label: 'Diapers' },
   { to: '/medicines', icon: Pill, label: 'Meds' },
-  { to: '/weight', icon: Scale, label: 'Weight' },
+  { to: '/growth', icon: TrendingUp, label: 'Growth' },
   { to: '/nazar', icon: Eye, label: 'Daily' },
   { to: '/reports', icon: ClipboardList, label: 'Reports' },
 ]

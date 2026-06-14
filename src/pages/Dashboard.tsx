@@ -3,15 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { Clock, AlertCircle, Scale } from 'lucide-react'
 import {
   subscribeFeedings, subscribeDiapers, subscribeMedicines, subscribeMedicineLogs,
-  subscribeWeights, subscribeNazar, subscribeMassage,
-  feedCountdownLabel, feedIntervalLabel, hasMedicineOverdue,
+  subscribeWeights, subscribeNazar, subscribeMassage, subscribeFeedSettings,
+  feedCountdownLabel, feedIntervalLabel, hasMedicineOverdue, DEFAULT_FEED_SETTINGS,
   todayInputDate,
 } from '@/lib/firestore'
-import type { FeedingLog, Medicine, MedicineLog, WeightLog, NazarLog, MassageLog } from '@/lib/types'
+import type { FeedingLog, Medicine, MedicineLog, WeightLog, NazarLog, MassageLog, FeedIntervalSettings } from '@/lib/types'
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const [lastFeed, setLastFeed] = useState<FeedingLog | null>(null)
+  const [todayFeeds, setTodayFeeds] = useState<FeedingLog[]>([])
+  const [feedSettings, setFeedSettings] = useState<FeedIntervalSettings>(DEFAULT_FEED_SETTINGS)
   const [diaperCounts, setDiaperCounts] = useState({ total: 0, wet: 0, dirty: 0, both: 0, dry: 0 })
   const [medicines, setMedicines] = useState<Medicine[]>([])
   const [medLogs, setMedLogs] = useState<MedicineLog[]>([])
@@ -22,7 +24,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     const unsubs = [
-      subscribeFeedings(1, logs => setLastFeed(logs[0] ?? null)),
+      subscribeFeedSettings(setFeedSettings),
+      subscribeFeedings(50, logs => {
+        setLastFeed(logs[0] ?? null)
+        const todayStr = new Date().toDateString()
+        setTodayFeeds(logs.filter(l => l.startedAt.toDate().toDateString() === todayStr))
+      }),
       subscribeDiapers(50, logs => {
         const today = new Date().toDateString()
         const t = logs.filter(l => l.changedAt.toDate().toDateString() === today)
@@ -36,7 +43,7 @@ export default function Dashboard() {
       }),
       subscribeMedicines(meds => setMedicines(meds.filter(m => m.active))),
       subscribeMedicineLogs(setMedLogs),
-      subscribeWeights(logs => setLatestWeight(logs[0] ?? null)),
+      subscribeWeights(logs => setLatestWeight(logs.find(l => l.weightKg != null) ?? null)),
       subscribeNazar(setNazarLogs),
       subscribeMassage(setMassageLogs),
     ]
@@ -50,7 +57,7 @@ export default function Dashboard() {
   const isNazarDoneToday = nazarLogs.some(l => l.date === today)
   const isMassageDoneToday = massageLogs.some(l => l.date === today)
   const overdueMeds = medicines.filter(m => hasMedicineOverdue(medLogs, m))
-  const feedCountdown = lastFeed ? feedCountdownLabel(lastFeed) : null
+  const feedCountdown = lastFeed ? feedCountdownLabel(lastFeed, feedSettings) : null
 
   const now = new Date()
   const hour = now.getHours()
@@ -96,7 +103,7 @@ export default function Dashboard() {
                 <p className="text-xs text-gray-400">
                   {feedCountdown.overdue ? 'Feed Bubdu now!' :
                    feedCountdown.urgent ? 'Almost time to feed' :
-                   `${lastFeed ? feedIntervalLabel(lastFeed) : '2.5h'} from end of last feed`}
+                   `${lastFeed ? feedIntervalLabel(lastFeed, feedSettings) : '2.5h'} from end of last feed`}
                 </p>
               </>
             ) : (
@@ -106,16 +113,42 @@ export default function Dashboard() {
         </button>
 
         <button
-          onClick={() => navigate('/weight')}
+          onClick={() => navigate('/growth')}
           className="w-[68px] shrink-0 bg-white rounded-2xl p-2 shadow-sm flex flex-col items-center justify-center gap-0.5 active:scale-95 transition-transform"
         >
           <Scale size={18} className="text-purple-500" />
           <p className="text-base font-bold text-gray-900 tabular-nums leading-tight">
-            {latestWeight ? latestWeight.weightKg.toFixed(3) : '—'}
+            {latestWeight?.weightKg != null ? latestWeight.weightKg.toFixed(3) : '—'}
           </p>
           <p className="text-[10px] text-gray-400">kg</p>
         </button>
       </div>
+
+      {(() => {
+        const bottleMl = todayFeeds.filter(l => l.type === 'bottle').reduce((s, l) => s + (l.amountMl ?? 0), 0)
+        const formulaMl = todayFeeds.filter(l => l.type === 'formula').reduce((s, l) => s + (l.amountMl ?? 0), 0)
+        const grandMl = bottleMl + formulaMl
+        const breastFeeds = todayFeeds.filter(l => l.type === 'breast')
+        const breastMins = breastFeeds.reduce((s, l) => s + (l.durationMin ?? 0), 0)
+        if (grandMl === 0 && breastFeeds.length === 0) return null
+        const mlParts: string[] = []
+        if (bottleMl > 0) mlParts.push(`🍼 ${bottleMl}ml`)
+        if (formulaMl > 0) mlParts.push(`🥛 ${formulaMl}ml`)
+        return (
+          <button onClick={() => navigate('/feeding')} className="w-full bg-purple-50 rounded-xl px-3 py-2.5 mb-3 flex flex-wrap gap-x-5 gap-y-1 active:bg-purple-100 transition-colors text-left">
+            {grandMl > 0 && (
+              <span className="text-sm text-purple-900 font-bold">
+                {mlParts.join(' + ')}{mlParts.length > 1 ? ` = ${grandMl}ml` : ''}
+              </span>
+            )}
+            {breastFeeds.length > 0 && (
+              <span className="text-sm text-purple-900 font-bold">
+                🤱 Breast ({breastFeeds.length} {breastFeeds.length === 1 ? 'time' : 'times'}{breastMins > 0 ? ` · ${breastMins} mins` : ''})
+              </span>
+            )}
+          </button>
+        )
+      })()}
 
       {overdueMeds.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-3 mb-3 flex items-start gap-2.5">

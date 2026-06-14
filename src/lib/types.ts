@@ -53,11 +53,27 @@ export interface MedicineLog {
   notes?: string
 }
 
-export interface WeightLog {
+// A growth measurement event. Either/both of weightKg and lengthCm may be
+// present (at least one). Stored in the `weightLogs` collection — the name is
+// kept for continuity with existing weight history; length is an added field.
+export interface GrowthLog {
   id: string
-  weightKg: number   // stored up to 3 decimal places
+  weightKg?: number  // kg, stored up to 3 decimal places
+  lengthCm?: number  // recumbent length in cm, 1 decimal place
   recordedAt: Timestamp
   notes?: string
+}
+
+/** @deprecated use GrowthLog — kept as an alias for older references */
+export type WeightLog = GrowthLog
+
+export type BabySex = 'boy' | 'girl'
+
+export interface BabyProfile {
+  name: string
+  sex: BabySex
+  birthDate: string  // 'YYYY-MM-DD'
+  birthTime?: string // 'HH:MM' (24h)
 }
 
 export interface NazarLog {
@@ -77,4 +93,15 @@ export interface IncidentLog {
   title: string
   description?: string
   recordedAt: Timestamp
+}
+
+export interface FeedIntervalRule {
+  upToMl: number | null  // null = catch-all "and above" (always last)
+  hours: number
+}
+
+export interface FeedIntervalSettings {
+  breastHours: number
+  bottleHours: number
+  formulaRules: FeedIntervalRule[]
 }

@@ -7,7 +7,7 @@ import Dashboard from '@/pages/Dashboard'
 import Feeding from '@/pages/Feeding'
 import Diapers from '@/pages/Diapers'
 import Medicines from '@/pages/Medicines'
-import Weight from '@/pages/Weight'
+import Growth from '@/pages/Growth'
 import Nazar from '@/pages/Nazar'
 import Reports from '@/pages/Reports'
 import { ensureAuth } from '@/lib/firebase'
@@ -154,7 +154,8 @@ export default function App() {
           <Route path="feeding" element={<Feeding />} />
           <Route path="diapers" element={<Diapers />} />
           <Route path="medicines" element={<Medicines />} />
-          <Route path="weight" element={<Weight />} />
+          <Route path="growth" element={<Growth />} />
+          <Route path="weight" element={<Navigate to="/growth" replace />} />
           <Route path="nazar" element={<Nazar />} />
           <Route path="reports" element={<Reports />} />
           <Route path="*" element={<Navigate to="/" replace />} />
