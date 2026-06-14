@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Milk, Trash2, Pencil, Plus, X, Clock } from 'lucide-react'
+import { Milk, Trash2, Pencil, Plus, X, Clock, Settings } from 'lucide-react'
 import {
   subscribeFeedings, addFeeding, updateFeeding, deleteFeeding,
+  subscribeFeedSettings, saveFeedSettings, DEFAULT_FEED_SETTINGS,
   formatTime, formatDate, feedCountdownLabel, feedIntervalLabel,
   makeTimestamp, todayInputDate, nowInputTime,
 } from '@/lib/firestore'
-import type { FeedingLog, FeedType, BreastSide } from '@/lib/types'
+import type { FeedingLog, FeedType, BreastSide, FeedIntervalSettings, FeedIntervalRule } from '@/lib/types'
 import type { Timestamp } from 'firebase/firestore'
 
 function tsToDate(ts: Timestamp): string {
@@ -29,14 +30,17 @@ export default function Feeding() {
   const location = useLocation()
   const [logs, setLogs] = useState<FeedingLog[]>([])
   const [showModal, setShowModal] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [quickType, setQuickType] = useState<FeedType | undefined>(undefined)
   const [editingLog, setEditingLog] = useState<FeedingLog | null>(null)
+  const [feedSettings, setFeedSettings] = useState<FeedIntervalSettings>(DEFAULT_FEED_SETTINGS)
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
-    const unsub = subscribeFeedings(30, setLogs)
+    const unsub = subscribeFeedings(null, setLogs)
+    const unsubSettings = subscribeFeedSettings(setFeedSettings)
     const timer = setInterval(() => setTick(t => t + 1), 30000)
-    return () => { unsub(); clearInterval(timer) }
+    return () => { unsub(); unsubSettings(); clearInterval(timer) }
   }, [])
 
   useEffect(() => {
@@ -51,7 +55,7 @@ export default function Feeding() {
   void tick
 
   const lastFeed = logs[0] ?? null
-  const countdown = lastFeed ? feedCountdownLabel(lastFeed) : null
+  const countdown = lastFeed ? feedCountdownLabel(lastFeed, feedSettings) : null
 
   const grouped = logs.reduce<Record<string, FeedingLog[]>>((acc, log) => {
     const day = formatDate(log.startedAt)
@@ -76,7 +80,7 @@ export default function Feeding() {
             </p>
           </div>
           <p className="ml-auto text-xs text-gray-400">
-            {lastFeed ? feedIntervalLabel(lastFeed) : '2.5h'} from end of last feed
+            {lastFeed ? feedIntervalLabel(lastFeed, feedSettings) : '2.5h'} from end of last feed
           </p>
         </div>
       )}
@@ -86,10 +90,16 @@ export default function Feeding() {
           <h1 className="text-xl font-bold text-purple-900">Feeding</h1>
           <p className="text-sm text-purple-400">{logs.length} logs</p>
         </div>
-        <button onClick={() => setShowModal(true)}
-          className="bg-purple-600 text-white rounded-full p-2.5 shadow-lg active:scale-95 transition-transform">
-          <Plus size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowSettings(true)}
+            className="bg-white text-purple-500 border border-purple-100 rounded-full p-2 shadow-sm active:scale-95 transition-transform">
+            <Settings size={18} />
+          </button>
+          <button onClick={() => setShowModal(true)}
+            className="bg-purple-600 text-white rounded-full p-2.5 shadow-lg active:scale-95 transition-transform">
+            <Plus size={20} />
+          </button>
+        </div>
       </div>
 
       {logs.length === 0 && (
@@ -102,6 +112,7 @@ export default function Feeding() {
       {Object.entries(grouped).map(([day, dayLogs]) => (
         <div key={day} className="mb-3">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">{day}</p>
+          <FeedDaySummary logs={dayLogs} />
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             {dayLogs.map((log, i) => {
               const icon = log.type === 'breast' ? '🤱' : log.type === 'bottle' ? '🍼' : '🥛'
@@ -131,6 +142,139 @@ export default function Feeding() {
 
       {showModal && <FeedModal initialType={quickType} onClose={() => { setShowModal(false); setQuickType(undefined) }} />}
       {editingLog && <FeedModal existing={editingLog} onClose={() => setEditingLog(null)} />}
+      {showSettings && <FeedSettingsModal settings={feedSettings} onClose={() => setShowSettings(false)} />}
+    </div>
+  )
+}
+
+function FeedDaySummary({ logs }: { logs: FeedingLog[] }) {
+  const bottleMl = logs.filter(l => l.type === 'bottle').reduce((s, l) => s + (l.amountMl ?? 0), 0)
+  const formulaMl = logs.filter(l => l.type === 'formula').reduce((s, l) => s + (l.amountMl ?? 0), 0)
+  const grandMl = bottleMl + formulaMl
+  const breastFeeds = logs.filter(l => l.type === 'breast')
+  const breastMins = breastFeeds.reduce((s, l) => s + (l.durationMin ?? 0), 0)
+  if (grandMl === 0 && breastFeeds.length === 0) return null
+
+  const mlParts: string[] = []
+  if (bottleMl > 0) mlParts.push(`🍼 ${bottleMl}ml`)
+  if (formulaMl > 0) mlParts.push(`🥛 ${formulaMl}ml`)
+
+  return (
+    <div className="bg-purple-50 rounded-xl px-3 py-2.5 mb-1.5 flex flex-wrap gap-x-5 gap-y-1">
+      {grandMl > 0 && (
+        <span className="text-sm text-purple-900 font-bold">
+          {mlParts.join(' + ')}{mlParts.length > 1 ? ` = ${grandMl}ml` : ''}
+        </span>
+      )}
+      {breastFeeds.length > 0 && (
+        <span className="text-sm text-purple-900 font-bold">
+          🤱 Breast ({breastFeeds.length} {breastFeeds.length === 1 ? 'time' : 'times'}{breastMins > 0 ? ` · ${breastMins} mins` : ''})
+        </span>
+      )}
+    </div>
+  )
+}
+
+function FeedSettingsModal({ settings, onClose }: { settings: FeedIntervalSettings; onClose: () => void }) {
+  const [breastHours, setBreastHours] = useState(settings.breastHours)
+  const [bottleHours, setBottleHours] = useState(settings.bottleHours)
+  const [rules, setRules] = useState<FeedIntervalRule[]>(settings.formulaRules)
+  const [saving, setSaving] = useState(false)
+
+  function updateRule(i: number, field: 'upToMl' | 'hours', val: number | null) {
+    setRules(r => r.map((rule, idx) => idx === i ? { ...rule, [field]: val } : rule))
+  }
+
+  function addTier() {
+    const prev = rules[rules.length - 2]
+    const newMl = prev?.upToMl != null ? prev.upToMl + 10 : 60
+    setRules(r => [...r.slice(0, -1), { upToMl: newMl, hours: r[r.length - 1].hours }, r[r.length - 1]])
+  }
+
+  function removeTier(i: number) {
+    setRules(r => r.filter((_, idx) => idx !== i))
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    await saveFeedSettings({ breastHours, bottleHours, formulaRules: rules })
+    onClose()
+  }
+
+  const numInput = 'border border-purple-200 rounded-xl px-2 py-2 focus:outline-none focus:border-purple-500 text-center tabular-nums w-16'
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-end" onClick={onClose}>
+      <div className="bg-white w-full max-w-md mx-auto rounded-t-3xl p-5 pb-8 max-h-[85vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-base font-bold text-purple-900">Feed Interval Settings</h2>
+          <button onClick={onClose} className="text-gray-400"><X size={20} /></button>
+        </div>
+
+        {/* Breast */}
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Breast</p>
+        <div className="flex items-center gap-3 bg-purple-50 rounded-xl px-3 py-3 mb-4">
+          <span className="text-lg">🤱</span>
+          <span className="text-sm text-gray-700 flex-1">Next feed after</span>
+          <input type="number" step="0.5" min="0.5" max="12" value={breastHours}
+            onChange={e => setBreastHours(Number(e.target.value))}
+            className={numInput} />
+          <span className="text-sm text-gray-500 w-6">hrs</span>
+        </div>
+
+        {/* Bottle */}
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Bottle</p>
+        <div className="flex items-center gap-3 bg-purple-50 rounded-xl px-3 py-3 mb-4">
+          <span className="text-lg">🍼</span>
+          <span className="text-sm text-gray-700 flex-1">Next feed after</span>
+          <input type="number" step="0.5" min="0.5" max="12" value={bottleHours}
+            onChange={e => setBottleHours(Number(e.target.value))}
+            className={numInput} />
+          <span className="text-sm text-gray-500 w-6">hrs</span>
+        </div>
+
+        {/* Formula tiers */}
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Formula (by amount)</p>
+        <div className="bg-purple-50 rounded-xl px-3 py-2 mb-2 space-y-2.5">
+          {rules.map((rule, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-lg">🥛</span>
+              {rule.upToMl !== null ? (
+                <>
+                  <span className="text-xs text-gray-500 shrink-0">Up to</span>
+                  <input type="number" step="5" min="5" value={rule.upToMl}
+                    onChange={e => updateRule(i, 'upToMl', Number(e.target.value))}
+                    className={numInput} />
+                  <span className="text-xs text-gray-500 shrink-0">ml →</span>
+                </>
+              ) : (
+                <span className="text-xs text-gray-500 flex-1">
+                  Above {rules[i - 1]?.upToMl ?? '?'} ml →
+                </span>
+              )}
+              <input type="number" step="0.5" min="0.5" max="12" value={rule.hours}
+                onChange={e => updateRule(i, 'hours', Number(e.target.value))}
+                className={`${numInput} ${rule.upToMl === null ? 'ml-auto' : ''}`} />
+              <span className="text-xs text-gray-500 shrink-0 w-6">hrs</span>
+              {rule.upToMl !== null && rules.length > 2 && (
+                <button onClick={() => removeTier(i)} className="text-gray-300 active:text-red-400 shrink-0">
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button onClick={addTier}
+          className="flex items-center gap-1 text-purple-600 text-sm font-medium mb-5">
+          <Plus size={14} /> Add tier
+        </button>
+
+        <button onClick={handleSave} disabled={saving}
+          className="w-full bg-purple-600 text-white py-2.5 rounded-xl font-semibold disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
     </div>
   )
 }
